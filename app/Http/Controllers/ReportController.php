@@ -38,18 +38,24 @@ class ReportController extends Controller
 
         $data = $this->build($request, $report);
         $writer = new XlsxWriter;
+        $filename = Str::slug($data['title']).'-'.now()->format('Ymd-His').'.xlsx';
 
-        foreach ($this->builder->sheets($data) as $sheet) {
-            $writer->addSheet($sheet['name'], $sheet['columns'], $sheet['rows'], $sheet['title']);
-        }
+        if (ReportCatalog::isUploadFile($report)) {
+            // Exactly the template's layout: one sheet "Sheet1", header in row 1, nothing else.
+            $section = $data['sections'][0];
+            $writer->addPlainSheet('Sheet1', $section['columns'], $section['rows'], 24.43);
+            $filename = 'BMI-'.Str::slug((string) $data['subtitle']).'.xlsx';
+        } else {
+            foreach ($this->builder->sheets($data) as $sheet) {
+                $writer->addSheet($sheet['name'], $sheet['columns'], $sheet['rows'], $sheet['title']);
+            }
 
-        if ($data['summary'] !== []) {
-            $writer->addSheet('Summary', ['Item', 'Value'], collect($data['summary'] + $data['meta'])->map(fn ($value, $label) => [$label, $value])->values()->all(), $data['title']);
+            if ($data['summary'] !== []) {
+                $writer->addSheet('Summary', ['Item', 'Value'], collect($data['summary'] + $data['meta'])->map(fn ($value, $label) => [$label, $value])->values()->all(), $data['title']);
+            }
         }
 
         ActivityLog::record('report.exported', personnelId: $request->integer('personnel_id') ?: null, newValues: ['report' => $report, 'filters' => $data['meta']], description: "Exported to Excel: {$data['title']}");
-
-        $filename = Str::slug($data['title']).'-'.now()->format('Ymd-His').'.xlsx';
 
         return response()->download($writer->save(), $filename, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

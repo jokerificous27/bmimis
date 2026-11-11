@@ -1,7 +1,5 @@
 <?php
 
-namespace Database\Seeders;
-
 use App\Enums\ClassificationCategory;
 use App\Enums\StandardType;
 use App\Models\BmiStandard;
@@ -9,14 +7,19 @@ use App\Models\InterventionPackage;
 use App\Models\Rank;
 use App\Models\RolePermission;
 use App\Models\Unit;
-use Illuminate\Database\Seeder;
+use Illuminate\Database\Migrations\Migration;
 
 /**
- * Reference data required by the application. Safe to run in every environment (idempotent).
+ * Reference data required by the application (ranks, sample units and packages, BMI standards, default
+ * role permissions). It is a migration, not a seeder, so it also runs on platforms that only run
+ * `php artisan migrate` on deploy (e.g. Laravel Cloud). Idempotent: existing rows are kept.
  */
-class ReferenceDataSeeder extends Seeder
+return new class extends Migration
 {
-    public function run(): void
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
     {
         $this->seedRanks();
         $this->seedUnits();
@@ -25,6 +28,14 @@ class ReferenceDataSeeder extends Seeder
         $this->seedProvisionalPnpStandard($packages);
 
         RolePermission::seedDefaults();
+    }
+
+    /**
+     * Reverse the migrations. Reference data may already be in use by records, so it is left in place.
+     */
+    public function down(): void
+    {
+        //
     }
 
     /**
@@ -53,7 +64,7 @@ class ReferenceDataSeeder extends Seeder
         ];
 
         foreach ($ranks as $order => [$abbreviation, $name, $category]) {
-            Rank::updateOrCreate(['abbreviation' => $abbreviation], [
+            Rank::firstOrCreate(['abbreviation' => $abbreviation], [
                 'name' => $name,
                 'category' => $category,
                 'sort_order' => $order + 1,
@@ -67,6 +78,7 @@ class ReferenceDataSeeder extends Seeder
      */
     private function seedUnits(): void
     {
+        // Regional offices and services
         $units = [
             ['HS', 'Health Service'],
             ['ITMS', 'Information Technology Management Service'],
@@ -76,8 +88,173 @@ class ReferenceDataSeeder extends Seeder
             ['CES', 'Communications and Electronics Service'],
         ];
 
+        // PRO2 Provincial Offices, City Office, and Police Stations
+        $territorialUnits = [
+
+            'BPPO' => [
+                'name' => 'Batanes Police Provincial Office',
+                'stations' => [
+                    'Basco PS',
+                    'Itbayat PS',
+                    'Ivana PS',
+                    'Mahatao PS',
+                    'Sabtang PS',
+                    'Uyugan PS',
+                ],
+            ],
+
+            'CPPO' => [
+                'name' => 'Cagayan Police Provincial Office',
+                'stations' => [
+                    'Abulug PS',
+                    'Alcala PS',
+                    'Allacapan PS',
+                    'Amulung PS',
+                    'Aparri PS',
+                    'Baggao PS',
+                    'Ballesteros PS',
+                    'Buguey PS',
+                    'Calayan PS',
+                    'Camalaniugan PS',
+                    'Claveria PS',
+                    'Enrile PS',
+                    'Gattaran PS',
+                    'Gonzaga PS',
+                    'Iguig PS',
+                    'Lallo PS',
+                    'Lasam PS',
+                    'Pamplona PS',
+                    'Peñablanca PS',
+                    'Piat PS',
+                    'Rizal PS',
+                    'Sanchez Mira PS',
+                    'Solana PS',
+                    'Sta Ana PS',
+                    'Sta Praxedes PS',
+                    'Sta Teresita PS',
+                    'Sto Niño PS',
+                    'Tuao PS',
+                    'Tuguegarao PS',
+                ],
+            ],
+
+            'IPPO' => [
+                'name' => 'Isabela Police Provincial Office',
+                'stations' => [
+                    'Alicia PS',
+                    'Angadanan PS',
+                    'Aurora PS',
+                    'Benito Soliven PS',
+                    'Burgos PS',
+                    'Cabagan PS',
+                    'Cabatuan PS',
+                    'Cauayan PS',
+                    'Cordon PS',
+                    'Delfin Albano PS',
+                    'Dinapigue PS',
+                    'Divilacan PS',
+                    'Echague PS',
+                    'Gamu PS',
+                    'Ilagan PS',
+                    'Jones PS',
+                    'Luna PS',
+                    'Maconacon PS',
+                    'Mallig PS',
+                    'Naguilian PS',
+                    'Palanan PS',
+                    'Quezon PS (ISABELA)',
+                    'Quirino PS',
+                    'Ramon PS',
+                    'Reina Mercedes PS',
+                    'Roxas PS',
+                    'San Agustin PS',
+                    'San Guillermo PS',
+                    'San Isidro PS',
+                    'San Manuel PS',
+                    'San Mariano PS',
+                    'San Mateo PS',
+                    'San Pablo PS',
+                    'Sta Maria PS',
+                    'Sto Tomas PS',
+                    'Tumauini PS',
+                ],
+            ],
+
+            'NVPPO' => [
+                'name' => 'Nueva Vizcaya Police Provincial Office',
+                'stations' => [
+                    'Alfonso Castañeda PS',
+                    'Ambaguio PS',
+                    'Aritao PS',
+                    'Bagabag PS',
+                    'Bambang PS',
+                    'Bayombong PS',
+                    'Diadi PS',
+                    'Dupax Del Norte PS',
+                    'Dupax Del Sur PS',
+                    'Kasibu PS',
+                    'Kayapa PS',
+                    'Quezon PS (NUEVA VIZCAYA)',
+                    'Solano PS',
+                    'Sta Fe PS',
+                    'Villaverde PS',
+                ],
+            ],
+
+            'QPPO' => [
+                'name' => 'Quirino Police Provincial Office',
+                'stations' => [
+                    'Aglipay PS',
+                    'Cabarroguis PS',
+                    'Diffun PS',
+                    'Maddela PS',
+                    'Nagtipunan PS',
+                    'Saguday PS',
+                ],
+            ],
+
+            'SCPO' => [
+                'name' => 'Santiago City Police Office',
+                'stations' => [
+                    'PS 01',
+                    'PS 02',
+                    'PS 03',
+                    'PS 04',
+                ],
+            ],
+        ];
+
+        // Add provincial/city offices and their police stations
+        foreach ($territorialUnits as $officeCode => $office) {
+
+            // Add the parent provincial/city office
+            $units[] = [
+                $officeCode,
+                $office['name'],
+            ];
+
+            // Add police stations under the office
+            foreach ($office['stations'] as $index => $station) {
+
+                $stationCode = $officeCode.'-PS-'.
+                    str_pad($index + 1, 2, '0', STR_PAD_LEFT);
+
+                $units[] = [
+                    $stationCode,
+                    $station,
+                ];
+            }
+        }
+
+        // Insert all units into the database
         foreach ($units as [$code, $name]) {
-            Unit::updateOrCreate(['code' => $code], ['name' => $name, 'is_active' => true]);
+            Unit::firstOrCreate(
+                ['code' => $code],
+                [
+                    'name' => $name,
+                    'is_active' => true,
+                ]
+            );
         }
     }
 
@@ -179,4 +356,4 @@ class ReferenceDataSeeder extends Seeder
             ]);
         }
     }
-}
+};

@@ -3,7 +3,6 @@
 use App\Enums\Role;
 use App\Models\Unit;
 use App\Models\User;
-use Database\Seeders\ReferenceDataSeeder;
 
 test('guests are redirected to the login page', function () {
     $response = $this->get(route('dashboard'));
@@ -19,7 +18,7 @@ test('authenticated users can visit the dashboard', function () {
 });
 
 test('users are sent to the dashboard for their role', function (Role $role, string $expectedRoute) {
-    $this->seed(ReferenceDataSeeder::class);
+    seedReferenceData();
     $user = User::factory()->role($role, Unit::first())->create();
 
     $this->actingAs($user)->get(route('dashboard'))->assertRedirect(route($expectedRoute));

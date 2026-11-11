@@ -65,6 +65,8 @@ Only users who may both correct records and encode assessments (Health Service A
 ### Reports
 *Reports* (Individual, Monthly, Annual, Unit, Summary): choose the report, set filters, then **Print preview** (A4; use *Print / Save as PDF* for a PDF) or **Export Excel**. Official forms: Individual BMI Form, Individual BMI Monitoring Form, Consolidated Profile.
 
+**BMI Upload File (Excel template)** (*Monthly Reports*): choose the year, month and (optionally) unit, then **Export Excel**. The file follows the BMI TEMPLATE layout for import into the receiving system: one sheet named *Sheet1* with the columns AccountNumber, ApplicableYear, ApplicableMonth, Height (cm), Weight (kg), Hip (cm), Wrist (cm), Waist (cm), and one row per personnel weighed in that month. AccountNumber is the employee number; ApplicableMonth is the month number (1–12); height and weight come from the monthly weigh-in; hip, wrist and waist come from the latest assessment on or before the end of that month (blank when never measured). Use **Print preview** to check the rows first.
+
 ## Unit Representative
 
 Your dashboard and lists are limited to your assigned unit: unit statistics, monthly compliance, personnel pending monitoring or needing follow-up, and unit reports (compliance and pending lists).

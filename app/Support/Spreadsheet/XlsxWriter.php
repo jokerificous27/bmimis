@@ -12,7 +12,7 @@ use ZipArchive;
 class XlsxWriter
 {
     /**
-     * @var list<array{name: string, title: string|null, headers: list<string>, rows: list<list<mixed>>}>
+     * @var list<array{name: string, title: string|null, headers: list<string>, rows: list<list<mixed>>, plain: bool, width: float}>
      */
     private array $sheets = [];
 
@@ -27,7 +27,26 @@ class XlsxWriter
             'title' => $title,
             'headers' => $headers,
             'rows' => is_array($rows) ? array_values($rows) : iterator_to_array($rows, false),
+            'plain' => false,
+            'width' => 20.0,
         ];
+
+        return $this;
+    }
+
+    /**
+     * A data sheet for import into another system: the header in row 1 without any styling, then the
+     * rows. No title row.
+     *
+     * @param  list<string>  $headers
+     * @param  iterable<list<mixed>>  $rows
+     */
+    public function addPlainSheet(string $name, array $headers, iterable $rows, float $columnWidth = 20.0): self
+    {
+        $this->addSheet($name, $headers, $rows);
+        $last = array_key_last($this->sheets);
+        $this->sheets[$last]['plain'] = true;
+        $this->sheets[$last]['width'] = $columnWidth;
 
         return $this;
     }
@@ -128,7 +147,7 @@ class XlsxWriter
         }
 
         if ($sheet['headers'] !== []) {
-            $xml .= $this->row($rowNumber++, $sheet['headers'], 1);
+            $xml .= $this->row($rowNumber++, $sheet['headers'], $sheet['plain'] ? 0 : 1);
         }
 
         foreach ($sheet['rows'] as $row) {
@@ -136,7 +155,7 @@ class XlsxWriter
         }
 
         $columns = max(count($sheet['headers']), 1);
-        $cols = '<cols><col min="1" max="'.$columns.'" width="20" customWidth="1"/></cols>';
+        $cols = '<cols><col min="1" max="'.$columns.'" width="'.$sheet['width'].'" customWidth="1"/></cols>';
 
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'.$cols.'<sheetData>'.$xml.'</sheetData></worksheet>';
     }

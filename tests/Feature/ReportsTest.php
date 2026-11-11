@@ -89,6 +89,39 @@ it('exports reports to Excel and records the export in the audit trail', functio
         ->and(ActivityLog::where('action', 'report.exported')->where('user_id', $this->admin->id)->exists())->toBeTrue();
 });
 
+it('exports the BMI upload file in the template layout', function () {
+    $this->normal->update(['employee_number' => '0012345']);
+    $this->normal->latestAssessment->forceFill(['waist_cm' => 82.5, 'hip_cm' => 96, 'wrist_cm' => 16.5])->save();
+
+    $response = $this->get(route('reports.export', ['report' => 'bmi-upload', 'year' => 2026, 'month' => 10]));
+    $response->assertOk()->assertDownload('BMI-october-2026.xlsx');
+
+    $zip = new ZipArchive;
+    $zip->open($response->getFile()->getPathname());
+    $workbook = $zip->getFromName('xl/workbook.xml');
+    $sheet = simplexml_load_string($zip->getFromName('xl/worksheets/sheet1.xml'));
+    $sheetCount = $zip->getFromName('xl/worksheets/sheet2.xml');
+    $zip->close();
+
+    $rows = collect();
+
+    foreach ($sheet->sheetData->row as $row) {
+        $cells = [];
+
+        foreach ($row->c as $cell) {
+            $cells[preg_replace('/\d+/', '', (string) $cell['r'])] = isset($cell->is) ? (string) $cell->is->t : (string) $cell->v;
+        }
+
+        $rows->push($cells);
+    }
+
+    expect($workbook)->toContain('name="Sheet1"')
+        ->and($sheetCount)->toBeFalse()
+        ->and(array_values($rows[0]))->toBe(['AccountNumber', 'ApplicableYear', 'ApplicableMonth', 'Height (cm)', 'Weight (kg)', 'Hip (cm)', 'Wrist (cm)', 'Waist (cm)'])
+        ->and($rows)->toHaveCount(3)
+        ->and($rows->firstWhere('A', '0012345'))->toBe(['A' => '0012345', 'B' => '2026', 'C' => '10', 'D' => '169', 'E' => '67.7', 'F' => '96', 'G' => '16.5', 'H' => '82.5']);
+});
+
 it('prints the individual BMI form with the official layout and computed values', function () {
     $assessment = $this->normal->latestAssessment;
 

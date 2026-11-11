@@ -30,6 +30,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Demonstration Data
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, the "seed_demo_data" migration creates fictitious demo
+    | accounts (password "password") and personnel. Set BMI_DEMO_DATA=false
+    | before the first migration of a real production deployment.
+    |
+    */
+
+    'demo_data' => (bool) env('BMI_DEMO_DATA', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Debug Mode
     |--------------------------------------------------------------------------
     |

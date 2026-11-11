@@ -47,6 +47,7 @@ class ReportBuilder
         $report = match ($key) {
             'individual-history' => $this->individualHistory($this->findPersonnel($user, $filters['personnel_id'])),
             'monthly-monitoring' => $this->monthlyMonitoring($personnel, $filters),
+            'bmi-upload' => $this->bmiUpload($personnel, $filters),
             'pending-monitoring' => $this->pendingMonitoring($personnel, $filters),
             'annual-monitoring' => $this->annualMonitoring($personnel, $filters),
             'weight-progress' => $this->weightProgress($personnel, $filters),
@@ -173,6 +174,60 @@ class ReportBuilder
             'sections' => [[
                 'title' => null,
                 'columns' => ['Rank / Name', 'Unit', 'Weight (kg)', 'Height (cm)', 'BMI', 'PNP', 'WHO', 'Change (kg)', 'Measured on', 'Status'],
+                'rows' => $rows->all(),
+            ]],
+        ];
+    }
+
+    /**
+     * BMI upload file: one row per personnel weighed in the month, in the column layout of the
+     * "BMI TEMPLATE" workbook that the receiving system imports. Height and weight come from the monthly
+     * weigh-in; hip, wrist and waist from the latest assessment on or before the end of that month.
+     *
+     * @param  Builder<Personnel>  $personnel
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    private function bmiUpload(Builder $personnel, array $filters): array
+    {
+        ['year' => $year, 'month' => $month] = $filters;
+        $endOfMonth = CarbonImmutable::create($year, $month, 1)->endOfMonth();
+
+        $records = MonthlyWeightMonitoring::query()
+            ->where('year', $year)->where('month', $month)
+            ->whereIn('personnel_id', (clone $personnel)->select('personnel.id'))
+            ->with('personnel:id,employee_number,last_name,first_name')
+            ->get()
+            ->sortBy(fn (MonthlyWeightMonitoring $record) => $record->personnel->employee_number, SORT_NATURAL)
+            ->values();
+
+        $measurements = BmiAssessment::query()->official()
+            ->whereIn('personnel_id', $records->pluck('personnel_id'))
+            ->whereDate('assessed_on', '<=', $endOfMonth)
+            ->orderByDesc('assessed_on')->orderByDesc('id')
+            ->get(['id', 'personnel_id', 'height_cm', 'waist_cm', 'hip_cm', 'wrist_cm'])
+            ->unique('personnel_id')
+            ->keyBy('personnel_id');
+
+        $rows = $records->map(function (MonthlyWeightMonitoring $record) use ($measurements, $year, $month) {
+            $assessment = $measurements->get($record->personnel_id);
+
+            return [
+                (string) $record->personnel->employee_number, $year, $month,
+                $record->height_cm ?? $assessment?->height_cm, $record->weight_kg,
+                $assessment?->hip_cm, $assessment?->wrist_cm, $assessment?->waist_cm,
+            ];
+        });
+
+        return [
+            'subtitle' => MonthlyWeightMonitoring::MONTHS[$month].' '.$year,
+            'summary' => [
+                'Personnel weighed' => $rows->count(),
+                'Without hip, wrist or waist on record' => $rows->filter(fn (array $row) => $row[5] === null || $row[6] === null || $row[7] === null)->count(),
+            ],
+            'sections' => [[
+                'title' => null,
+                'columns' => ReportCatalog::UPLOAD_COLUMNS,
                 'rows' => $rows->all(),
             ]],
         ];

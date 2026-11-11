@@ -12,7 +12,7 @@ composer install
 npm install
 cp .env.example .env        # then set DB_* (MySQL database, e.g. bmi_db)
 php artisan key:generate
-php artisan migrate --seed  # reference data + fictitious demo data (non-production only)
+php artisan migrate         # tables, reference data and fictitious demo data (all migrations, no seeders)
 npm run build               # or `composer run dev` while developing
 ```
 
@@ -31,11 +31,22 @@ All demo passwords are `password`. Demo personnel are fictitious.
 | PNP Personnel (linked to DEMO-00001) | `personnel@bmi.test` |
 | PNP Personnel (linked to DEMO-00002, another unit) | `personnel2@bmi.test` |
 
+The two default demo samples are **DEMO-00001 (PCpl DEMO, Daniel P.)** and **DEMO-00002 (Pat SAMPLE, Elena T.)**. Their weigh-in QR codes are fixed in the demo migration, so the demo weigh-in photos (scale reading 59.80 kg) identify them on every deployment; their history leaves the current month open so a demo photo saves straight away.
+
+## Demo deployment (Laravel Cloud)
+
+Everything the app needs is created by migrations, so the default deploy command `php artisan migrate --force` is enough: no seeders are run.
+
+- `seed_reference_data` creates ranks, sample units and packages, the WHO and provisional PNP standards and the default permissions.
+- `seed_demo_data` creates the demo accounts above and 48 fictitious personnel with two years of history (about a minute on first deploy). It runs unless `BMI_DEMO_DATA=false`.
+- The demo accounts use the password `password`: anyone who finds the site can sign in. Use this for demonstrations only, with no real personnel data.
+- Weigh-in and assessment photos are stored on the local disk; attach persistent object storage if they must survive redeploys.
+
 ## Production checklist
 
 1. `APP_ENV=production`, `APP_DEBUG=false`, HTTPS, a strong `APP_KEY`.
 2. `ALLOW_SELF_REGISTRATION=false` — accounts are created by administrators.
-3. `php artisan migrate --force --seed` seeds **reference data only** (no demo accounts in production), then `php artisan bmi:create-admin` to create the first Super Administrator.
+3. Set `BMI_DEMO_DATA=false` **before the first migration**, so no demo accounts are created. `php artisan migrate --force` then creates **reference data only**; run `php artisan bmi:create-admin` to create the first Super Administrator.
 4. Encode the **official PNP Acceptable BMI thresholds** in *Administration → BMI Standards* (the seeded PNP standard is marked *provisional* and mirrors WHO cut-offs).
 5. Encode the official **intervention package** descriptions (seeded packages A/B/C are placeholders).
 6. Review *System Settings* (deadline day, compliance target, IBW method, validation ranges, letterhead).

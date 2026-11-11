@@ -5,7 +5,6 @@ use App\Models\Personnel;
 use App\Models\Rank;
 use App\Models\Unit;
 use App\Models\User;
-use Database\Seeders\ReferenceDataSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -51,11 +50,13 @@ expect()->extend('toBeOne', function () {
 */
 
 /**
- * Seed ranks, units, WHO/provisional PNP standards, sample packages and the default permission matrix.
+ * Ranks, units, WHO/provisional PNP standards, sample packages and the default permission matrix are
+ * created by the "seed_reference_data" migration, so every test database has them. Tests call this
+ * to state that they rely on that data.
  */
 function seedReferenceData(): void
 {
-    test()->seed(ReferenceDataSeeder::class);
+    expect(Rank::query()->exists())->toBeTrue('The reference data migration did not run.');
 }
 
 function userWithRole(Role $role, ?Unit $unit = null): User

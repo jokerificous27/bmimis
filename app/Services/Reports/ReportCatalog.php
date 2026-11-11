@@ -8,6 +8,13 @@ namespace App\Services\Reports;
 class ReportCatalog
 {
     /**
+     * Header row of the "BMI TEMPLATE" workbook, in its exact order and spelling.
+     *
+     * @var list<string>
+     */
+    public const UPLOAD_COLUMNS = ['AccountNumber', 'ApplicableYear', 'ApplicableMonth', 'Height (cm)', 'Weight (kg)', 'Hip (cm)', 'Wrist (cm)', 'Waist (cm)'];
+
+    /**
      * @var array<string, array{title: string, category: string, description: string, orientation: string, filters: list<string>, requires: list<string>}>
      */
     public const REPORTS = [
@@ -56,6 +63,14 @@ class ReportCatalog
             'category' => 'monthly',
             'description' => 'Active personnel without a recorded weight for the month.',
             'orientation' => 'portrait',
+            'filters' => ['year', 'month', 'unit_id'],
+            'requires' => [],
+        ],
+        'bmi-upload' => [
+            'title' => 'BMI Upload File (Excel template)',
+            'category' => 'monthly',
+            'description' => 'Excel file in the BMI TEMPLATE layout for import into the receiving system: account number, year, month, height, weight, hip, wrist and waist of everyone weighed in the month.',
+            'orientation' => 'landscape',
             'filters' => ['year', 'month', 'unit_id'],
             'requires' => [],
         ],
@@ -164,5 +179,14 @@ class ReportCatalog
     public static function isForm(string $key): bool
     {
         return in_array($key, ['bmi-form', 'monitoring-form', 'personnel-profile'], true);
+    }
+
+    /**
+     * Reports whose Excel export is a data file for another system: one plain worksheet in a fixed
+     * column layout, without a title row or summary sheet.
+     */
+    public static function isUploadFile(string $key): bool
+    {
+        return $key === 'bmi-upload';
     }
 }
