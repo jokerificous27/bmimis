@@ -50,9 +50,10 @@ it('prefers age-specific bands over general bands', function () {
     $standard->classifications()->create(['label' => 'Acceptable (40+)', 'category' => ClassificationCategory::Normal, 'min_bmi' => 25, 'max_bmi' => 27, 'min_age' => 40, 'color' => 'green']);
 
     $classifier = app(BmiClassifier::class);
+    $date = CarbonImmutable::parse('2019-01-01'); // while the provisional standard, which got the extra band, was in force
 
-    expect($classifier->classify(26.0, StandardType::Pnp, today(), age: 45)->label)->toBe('Acceptable (40+)')
-        ->and($classifier->classify(26.0, StandardType::Pnp, today(), age: 30)->label)->toBe('Overweight');
+    expect($classifier->classify(26.0, StandardType::Pnp, $date, age: 45)->label)->toBe('Acceptable (40+)')
+        ->and($classifier->classify(26.0, StandardType::Pnp, $date, age: 30)->label)->toBe('Overweight');
 });
 
 it('returns no classification when no standard is configured', function () {

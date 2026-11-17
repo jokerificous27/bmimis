@@ -52,6 +52,30 @@
             </div>
         </x-panel>
 
+        <x-panel :heading="__('Photo')" :subheading="__('Shown at the Weigh-in Station when the QR code is scanned, so staff can confirm they are weighing the right person.')">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-center">
+                @if ($photo && ! $errors->has('photo') && $photo->isPreviewable())
+                    <img src="{{ $photo->temporaryUrl() }}" alt="{{ __('New photo') }}" class="size-28 shrink-0 rounded-xl object-cover">
+                @elseif ($personnel && ! $removePhoto)
+                    <x-personnel-photo :personnel="$personnel" class="size-28 rounded-xl text-2xl" />
+                @else
+                    <div class="flex size-28 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-400 dark:bg-zinc-800"><flux:icon.user class="size-10" /></div>
+                @endif
+                <div class="min-w-0 flex-1 space-y-2">
+                    <flux:input type="file" wire:model="photo" accept="image/jpeg,image/png,image/webp" :label="__('Upload a picture')" :description="__('Face clearly visible, like an ID picture. JPG, PNG or WebP, up to 10 MB.')" />
+                    <div wire:loading wire:target="photo" class="text-sm text-zinc-500">{{ __('Uploading…') }}</div>
+                    @if ($personnel?->photo_path)
+                        <flux:checkbox wire:model.live="removePhoto" :label="__('Remove the current picture')" />
+                    @elseif ($personnel?->displayPhotoPath())
+                        <flux:text size="xs">{{ __('No profile picture uploaded yet: the center view picture or the front photo of the latest assessment is shown until one is.') }}</flux:text>
+                    @endif
+                    @if ($personnel)
+                        <flux:text size="xs">{{ __('Left, center and right view pictures are managed in the Pictures tab of the profile. The personnel can also upload their own pictures there.') }}</flux:text>
+                    @endif
+                </div>
+            </div>
+        </x-panel>
+
         <x-panel :heading="__('Assignment and contact')">
             <div class="grid gap-4 sm:grid-cols-2">
                 <flux:select wire:model.live="unit_id" :label="__('Unit / Office')" required>

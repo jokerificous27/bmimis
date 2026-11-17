@@ -33,6 +33,11 @@ class MeasurementReview extends Component
     public string $wrist_cm = '';
 
     /**
+     * Observation made with the new measurements: "yes", "no", or empty when not observed.
+     */
+    public string $bulging_abdomen = '';
+
+    /**
      * What the administrator decided in this session ("updated" or "declined"), shown as confirmation.
      */
     #[Locked]
@@ -99,7 +104,15 @@ class MeasurementReview extends Component
             throw ValidationException::withMessages(['waist_cm' => __('Enter at least one measurement, or choose "No update needed".')]);
         }
 
-        $assessment = $reviews->update($this->record, $measurements);
+        $this->validate(['bulging_abdomen' => ['nullable', 'in:yes,no']]);
+
+        $assessment = $reviews->update($this->record, $measurements + [
+            'bulging_abdomen' => match ($this->bulging_abdomen) {
+                'yes' => true,
+                'no' => false,
+                default => null,
+            },
+        ]);
 
         $this->finish('updated', $assessment->id);
         Flux::toast(variant: 'success', text: __('Measurements saved as a new assessment for :name.', ['name' => $this->record->personnel->rank_name]));

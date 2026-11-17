@@ -41,6 +41,10 @@ use Illuminate\Support\Str;
  * @property string|null $email
  * @property PersonnelStatus $status
  * @property string|null $remarks
+ * @property string|null $photo_path
+ * @property string|null $photo_left_path
+ * @property string|null $photo_center_path
+ * @property string|null $photo_right_path
  * @property-read string $full_name
  * @property-read string $formal_name
  * @property-read string $rank_name
@@ -65,6 +69,19 @@ class Personnel extends Model
      * Prefix of the value encoded in a personnel weigh-in QR code.
      */
     public const QR_PREFIX = 'PNPBMI:';
+
+    /**
+     * Pictures kept on the personnel record, by view. "profile" is the identification picture shown
+     * when the QR code is scanned.
+     *
+     * @var array<string, string>
+     */
+    public const PHOTO_COLUMNS = [
+        'profile' => 'photo_path',
+        'left' => 'photo_left_path',
+        'center' => 'photo_center_path',
+        'right' => 'photo_right_path',
+    ];
 
     /**
      * The QR token is an identifier only; it is kept out of audit values.
@@ -150,6 +167,39 @@ class Personnel extends Model
         }
 
         return self::query()->visibleTo($user)->where('qr_token', $token)->first();
+    }
+
+    /**
+     * The picture that identifies the personnel: the one uploaded on their record, otherwise the
+     * front photo of their most recent assessment that has one.
+     */
+    public function displayPhotoPath(): ?string
+    {
+        return $this->photo_path
+            ?? $this->photo_center_path
+            ?? $this->assessments()->official()->whereNotNull('photo_front_path')
+                ->orderByDesc('assessed_on')->orderByDesc('id')->value('photo_front_path');
+    }
+
+    /**
+     * Address of the picture (served after an authorization check), or null when there is none.
+     */
+    public function photoUrl(): ?string
+    {
+        $path = $this->displayPhotoPath();
+
+        return $path ? route('personnel.photo', ['personnel' => $this, 'v' => substr(md5($path), 0, 8)]) : null;
+    }
+
+    /**
+     * Address of one of the uploaded pictures ("profile", "left", "center" or "right"), or null when
+     * that picture has not been uploaded.
+     */
+    public function viewPhotoUrl(string $view): ?string
+    {
+        $path = $this->getAttribute(self::PHOTO_COLUMNS[$view]);
+
+        return $path ? route('personnel.photo', ['personnel' => $this, 'view' => $view, 'v' => substr(md5($path), 0, 8)]) : null;
     }
 
     /**

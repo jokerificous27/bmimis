@@ -157,14 +157,22 @@ it('only informs users who do not encode assessments', function () {
     expect($record->fresh()->measurement_review)->toBe(ReviewStatus::Pending);
 });
 
-it('shows the question at the Weigh-in Station right after a weigh-in with a large BMI change', function () {
+it('raises no question after a Weigh-in Station weigh-in, where the measurements are taken with the weight', function () {
     app(Settings::class)->set(['weight_reader' => 'off']);
 
     Livewire::actingAs($this->admin)->test(Station::class)
         ->call('identify', $this->personnel->qrPayload())
         ->set('weight', '75')
+        ->set('height_cm', '169')
+        ->set('waist_cm', '90')
+        ->set('hip_cm', '98')
+        ->set('wrist_cm', '17')
+        ->set('bulging_abdomen', 'yes')
         ->call('save')
         ->assertHasNoErrors()
-        ->assertSet('lastSaved.review_record_id', $this->personnel->monthlyWeights()->value('id'))
-        ->assertSee('Do you want to update the waist, hip and wrist too?');
+        ->assertSet('lastSaved.measurements', true)
+        ->assertSet('lastSaved.review_record_id', null)
+        ->assertDontSee('Do you want to update the waist, hip and wrist too?');
+
+    expect($this->personnel->monthlyWeights()->sole()->measurement_review)->toBeNull();
 });

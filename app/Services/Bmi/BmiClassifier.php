@@ -42,8 +42,11 @@ class BmiClassifier
 
         $candidates = $standard->classifications->filter(fn (BmiClassification $classification) => $classification->matches($bmi, $age, $sex));
 
-        // Prefer the most specific band (age/sex specific rows win over general rows).
-        return $candidates->sortByDesc(fn (BmiClassification $classification) => ($classification->sex ? 2 : 0) + ($classification->min_age !== null || $classification->max_age !== null ? 1 : 0))
+        // Prefer the most specific band (age/sex specific rows win over general rows). When the age is
+        // unknown several age groups match: the youngest group, which is the strictest, is used.
+        return $candidates
+            ->sortBy(fn (BmiClassification $classification) => $classification->min_age ?? 0)
+            ->sortByDesc(fn (BmiClassification $classification) => ($classification->sex ? 2 : 0) + ($classification->min_age !== null || $classification->max_age !== null ? 1 : 0))
             ->first();
     }
 

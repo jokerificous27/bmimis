@@ -69,7 +69,7 @@
                     @canany(['users.manage', 'units.manage', 'ranks.manage', 'standards.manage', 'packages.manage', 'audit.view', 'settings.manage'])
                         <flux:sidebar.group :heading="__('Administration')" class="grid">
                             @can('users.manage')
-                                <flux:sidebar.item icon="user-group" :href="route('admin.users')" :current="request()->routeIs('admin.users')" wire:navigate>{{ __('User Management') }}</flux:sidebar.item>
+                                <flux:sidebar.item icon="user-group" :href="route('admin.users')" :current="request()->routeIs('admin.users', 'admin.users.upload')" wire:navigate>{{ __('User Management') }}</flux:sidebar.item>
                                 <flux:sidebar.item icon="key" :href="route('admin.permissions')" :current="request()->routeIs('admin.permissions')" wire:navigate>{{ __('Roles & Permissions') }}</flux:sidebar.item>
                             @endcan
                             @can('units.manage')

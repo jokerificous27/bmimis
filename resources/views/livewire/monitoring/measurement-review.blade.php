@@ -53,6 +53,11 @@
                                 <flux:input wire:model="hip_cm" :label="__('Hip (cm)')" type="number" step="0.1" inputmode="decimal" />
                                 <flux:input wire:model="wrist_cm" :label="__('Wrist (cm)')" type="number" step="0.1" inputmode="decimal" />
                             </div>
+                            <flux:select wire:model="bulging_abdomen" :label="__('Bulging abdomen?')" class="sm:max-w-xs">
+                                <flux:select.option value="">{{ __('Not observed') }}</flux:select.option>
+                                <flux:select.option value="no">{{ __('No') }}</flux:select.option>
+                                <flux:select.option value="yes">{{ __('Yes, bulging') }}</flux:select.option>
+                            </flux:select>
                             <flux:text size="xs">{{ __('The last values are filled in; change the ones you measured again. They are saved as a new assessment dated :date with the weigh-in weight of :weight kg, so the earlier assessment stays unchanged.', ['date' => $record->measurementDate()->format('M j, Y'), 'weight' => number_format($record->weight_kg, 2)]) }}</flux:text>
                             <flux:error name="assessed_on" />
                             <div class="flex flex-wrap gap-2">

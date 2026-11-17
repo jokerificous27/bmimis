@@ -324,12 +324,26 @@ class MonthlyMonitoringService
         }
 
         $date = $record->measured_on ? CarbonImmutable::parse($record->measured_on) : CarbonImmutable::create($record->year, $record->month, 1)->endOfMonth();
-        $evaluation = $this->evaluator->evaluate($height, $weightKg, $date, $personnel->sex, $personnel->ageOn($date));
+
+        // Waist, wrist and the abdomen observation come from the assessment in force for the month:
+        // they decide whether a BMI above the acceptable range is accepted by large body frame or waist.
+        $measured = $source ?? $this->applicableAssessment($personnel, $record->year, $record->month);
+
+        $evaluation = $this->evaluator->evaluate(
+            heightCm: $height,
+            weightKg: $weightKg,
+            date: $date,
+            sex: $personnel->sex,
+            age: $personnel->ageOn($date),
+            waistCm: $measured?->waist_cm,
+            wristCm: $measured?->wrist_cm,
+            bulgingAbdomen: $measured?->bulging_abdomen,
+        );
 
         $record->forceFill([
             'bmi' => $evaluation->bmi,
-            'pnp_classification' => $evaluation->pnpClassification?->label,
-            'pnp_category' => $evaluation->pnpClassification?->category,
+            'pnp_classification' => $evaluation->pnpLabel(),
+            'pnp_category' => $evaluation->pnpCategory(),
             'who_classification' => $evaluation->whoClassification?->label,
             'who_category' => $evaluation->whoClassification?->category,
         ]);

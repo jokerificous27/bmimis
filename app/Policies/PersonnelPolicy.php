@@ -33,6 +33,15 @@ class PersonnelPolicy
         return $user->hasPermission(Permission::ManagePersonnel) && $user->canAccessPersonnel($personnel);
     }
 
+    /**
+     * Upload or remove the personnel's pictures: the personnel themselves, or staff who manage the record.
+     */
+    public function managePhotos(User $user, Personnel $personnel): bool
+    {
+        return ($user->is_active && $personnel->user_id !== null && $personnel->user_id === $user->id)
+            || $this->update($user, $personnel);
+    }
+
     public function delete(User $user, Personnel $personnel): bool
     {
         return $this->update($user, $personnel);

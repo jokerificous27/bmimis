@@ -2,6 +2,7 @@
 
 use App\Enums\Role;
 use App\Livewire\Monitoring\Station;
+use App\Livewire\Personnel\Form as PersonnelForm;
 use App\Models\ActivityLog;
 use App\Models\MonthlyWeightMonitoring;
 use App\Models\Personnel;
@@ -26,7 +27,7 @@ beforeEach(function () {
     $this->actingAs($this->encoder);
 
     $this->personnel = personnelIn($this->itms);
-    app(AssessmentService::class)->create($this->personnel, ['assessed_on' => today()->subDay()->format('Y-m-d'), 'height_cm' => 169, 'weight_kg' => 68], submit: true);
+    app(AssessmentService::class)->create($this->personnel, ['assessed_on' => today()->subDay()->format('Y-m-d'), 'height_cm' => 169, 'weight_kg' => 68, 'waist_cm' => 82, 'hip_cm' => 96, 'wrist_cm' => 16.5], submit: true);
     $this->payload = $this->personnel->qrPayload();
 });
 
@@ -63,7 +64,7 @@ it('saves automatically from the reading made on the phone, without any API key'
         ->set('photo', UploadedFile::fake()->image('weigh-in.jpg'))
         ->assertHasNoErrors()
         ->assertSet('autoSaveHeld', true)
-        ->call('saveWeightOnly')
+        ->set('bulging_abdomen', 'no')->call('save')
         ->assertSet('lastSaved.automatic', true);
 
     $record = MonthlyWeightMonitoring::query()->where('capture_method', 'station')->sole();
@@ -105,7 +106,7 @@ it('saves a weight locked by the Smart camera and returns the name for its statu
 
     $component->call('useDeviceReading', 59.8, 'high', '59.80', 2160, 3840, 3)
         ->set('photo', UploadedFile::fake()->image('weigh-in.jpg'))
-        ->call('saveWeightOnly')
+        ->set('bulging_abdomen', 'no')->call('save')
         ->assertSet('lastSaved.automatic', true);
 
     expect(MonthlyWeightMonitoring::sole()->weight_kg)->toBe(59.8);
@@ -204,7 +205,7 @@ it('records the weight read from the photo after one confirmation', function () 
         ->set('photo', UploadedFile::fake()->image('weigh-in.jpg', 1200, 900))
         ->assertHasNoErrors()
         ->assertSet('weight', '67.70')
-        ->call('save')
+        ->set('bulging_abdomen', 'no')->call('save')
         ->assertHasNoErrors()
         ->assertSet('personnelId', null);
 
@@ -232,8 +233,8 @@ it('saves a clear reading automatically as soon as the photo is taken', function
         ->set('photo', UploadedFile::fake()->image('weigh-in.jpg', 1200, 900))
         ->assertHasNoErrors()
         ->assertSet('autoSaveHeld', true)
-        ->assertSee('Update the waist, hip and wrist too?')
-        ->call('saveWeightOnly')
+        ->assertSee('Height, waist, hip and wrist')
+        ->set('bulging_abdomen', 'no')->call('save')
         ->assertSet('personnelId', null)
         ->assertSet('lastSaved.automatic', true)
         ->assertSee('Saved automatically');
@@ -293,7 +294,7 @@ it('keeps the staff correction when the AI reading was wrong', function () {
         ->call('identify', $this->payload)
         ->set('photo', UploadedFile::fake()->image('weigh-in.jpg'))
         ->set('weight', '67.70')
-        ->call('save')
+        ->set('bulging_abdomen', 'no')->call('save')
         ->assertHasNoErrors();
 
     $record = MonthlyWeightMonitoring::sole();
@@ -311,7 +312,7 @@ it('works without AI reading by typing the weight', function () {
         ->set('photo', UploadedFile::fake()->image('weigh-in.jpg'))
         ->assertSet('weight', '')
         ->set('weight', '70.25')
-        ->call('save')
+        ->set('bulging_abdomen', 'no')->call('save')
         ->assertHasNoErrors();
 
     expect(MonthlyWeightMonitoring::sole()->weight_kg)->toBe(70.25)
@@ -326,7 +327,7 @@ it('blocks a second weigh-in in the same month and discards the photo', function
         ->call('identify', $this->payload)
         ->set('photo', UploadedFile::fake()->image('weigh-in.jpg'))
         ->set('weight', '70')
-        ->call('save')
+        ->set('bulging_abdomen', 'no')->call('save')
         ->assertHasErrors('weight_kg');
 
     expect(MonthlyWeightMonitoring::count())->toBe(1)
@@ -373,7 +374,7 @@ it('rejects implausible weights', function () {
     Livewire::test(Station::class)
         ->call('identify', $this->payload)
         ->set('weight', '677')
-        ->call('save')
+        ->set('bulging_abdomen', 'no')->call('save')
         ->assertHasErrors('weight');
 });
 
@@ -441,65 +442,209 @@ it('keeps AI reading off unless chosen and an API key is configured', function (
         ->and((new ClaudeScaleReader($settings))->read('jpeg')->hasWeight())->toBeFalse();
 });
 
-it('asks whether to update waist, hip and wrist before saving, then saves them with the weight', function () {
+it('holds a clear reading until the mandatory measurements are entered, then saves them with the weight', function () {
     fakeScaleReader(new ScaleReading(75.0, 'high', '75.0'));
     $baseline = $this->personnel->assessments()->sole();
-    $baseline->forceFill(['waist_cm' => 82, 'hip_cm' => 96, 'wrist_cm' => 16.5])->save();
 
     Livewire::test(Station::class)
         ->call('identify', $this->payload)
         ->set('photo', UploadedFile::fake()->image('weigh-in.jpg', 1200, 900))
         ->assertSet('autoSaveHeld', true)
-        ->assertSee('Update the waist, hip and wrist too?');
-
-    expect(MonthlyWeightMonitoring::count())->toBe(0);
-
-    Livewire::test(Station::class)
-        ->call('identify', $this->payload)
-        ->set('photo', UploadedFile::fake()->image('weigh-in.jpg', 1200, 900))
-        ->call('startMeasurements')
+        ->assertSet('lastSaved', null)
+        ->assertSet('height_cm', '169.0')
         ->assertSet('waist_cm', '82.0')
+        ->set('height_cm', '170')
         ->set('waist_cm', '90')
-        ->call('save')
+        ->set('bulging_abdomen', 'no')->call('save')
         ->assertHasNoErrors()
-        ->assertSet('lastSaved.measurements', true);
+        ->assertSet('lastSaved.measurements', true)
+        ->assertSet('lastSaved.automatic', true);
 
     $record = MonthlyWeightMonitoring::sole();
     $assessment = $this->personnel->assessments()->whereKeyNot($baseline->id)->sole();
 
     expect($record->weight_kg)->toBe(75.0)
+        ->and($record->height_cm)->toBe(170.0)
         ->and($record->measurement_review)->toBeNull()
         ->and($assessment->assessed_on->isToday())->toBeTrue()
         ->and($assessment->weight_kg)->toBe(75.0)
-        ->and($assessment->height_cm)->toBe(169.0)
+        ->and($assessment->height_cm)->toBe(170.0)
         ->and($assessment->waist_cm)->toBe(90.0)
         ->and($assessment->hip_cm)->toBe(96.0)
         ->and($assessment->wrist_cm)->toBe(16.5);
 });
 
-it('needs at least one measurement and saves nothing until it is given', function () {
+it('saves nothing while height, waist, hip or wrist is missing', function (string $field) {
     fakeScaleReader(null, enabled: false);
 
     Livewire::test(Station::class)
         ->call('identify', $this->payload)
         ->set('weight', '70')
-        ->call('startMeasurements')
-        ->set('waist_cm', '')
-        ->set('hip_cm', '')
-        ->set('wrist_cm', '')
-        ->call('save')
-        ->assertHasErrors('waist_cm');
+        ->set($field, '')
+        ->set('bulging_abdomen', 'no')->call('save')
+        ->assertHasErrors($field);
 
     expect(MonthlyWeightMonitoring::count())->toBe(0)
         ->and($this->personnel->assessments()->count())->toBe(1);
-});
+})->with(['height_cm', 'waist_cm', 'hip_cm', 'wrist_cm']);
 
-it('saves automatically without asking when there is no height on record to measure against', function () {
+it('requires the measurements of personnel never assessed before and makes them the first assessment', function () {
     fakeScaleReader(new ScaleReading(67.70, 'high', '67.7'));
     $newcomer = personnelIn($this->itms);
 
-    Livewire::test(Station::class)
+    $station = Livewire::test(Station::class)
         ->call('identify', $newcomer->qrPayload())
         ->set('photo', UploadedFile::fake()->image('weigh-in.jpg', 1200, 900))
+        ->assertSet('lastSaved', null)
+        ->assertSet('height_cm', '')
+        ->set('bulging_abdomen', 'no')->call('save')
+        ->assertHasErrors(['height_cm', 'waist_cm', 'hip_cm', 'wrist_cm']);
+
+    expect(MonthlyWeightMonitoring::count())->toBe(0);
+
+    $station->set('height_cm', '169')->set('waist_cm', '82')->set('hip_cm', '96')->set('wrist_cm', '16.5')
+        ->set('bulging_abdomen', 'no')->call('save')
+        ->assertHasNoErrors();
+
+    expect(MonthlyWeightMonitoring::sole()->bmi)->toBe(23.7)
+        ->and($newcomer->assessments()->sole()->height_cm)->toBe(169.0);
+});
+
+it('saves the weight only when the measurements were already taken in an assessment today', function () {
+    fakeScaleReader(new ScaleReading(67.70, 'high', '67.7'));
+    app(AssessmentService::class)->create($this->personnel, ['assessed_on' => today()->format('Y-m-d'), 'height_cm' => 170, 'weight_kg' => 67.7, 'waist_cm' => 84], submit: true);
+
+    Livewire::test(Station::class)
+        ->call('identify', $this->payload)
+        ->set('photo', UploadedFile::fake()->image('weigh-in.jpg', 1200, 900))
+        ->assertHasNoErrors()
         ->assertSet('lastSaved.automatic', true);
+
+    expect(MonthlyWeightMonitoring::sole()->height_cm)->toBe(170.0)
+        ->and($this->personnel->assessments()->count())->toBe(2);
+});
+
+it('shows the picture of the personnel when their QR code is scanned', function () {
+    fakeScaleReader(null, enabled: false);
+
+    Livewire::test(Station::class)
+        ->call('identify', $this->payload)
+        ->assertSee('No picture on record')
+        ->assertDontSee(route('personnel.photo', $this->personnel), false);
+
+    Storage::disk('local')->put('personnel-photos/x.jpg', 'jpeg');
+    $this->personnel->forceFill(['photo_path' => 'personnel-photos/x.jpg'])->save();
+
+    Livewire::test(Station::class)
+        ->call('identify', $this->payload)
+        ->assertSee(route('personnel.photo', $this->personnel), false)
+        ->assertSee('Check that this is the person on the scale');
+});
+
+it('falls back to the front photo of the latest assessment', function () {
+    expect($this->personnel->photoUrl())->toBeNull();
+
+    $this->personnel->assessments()->sole()->forceFill(['photo_front_path' => 'assessment-photos/front.jpg'])->save();
+
+    expect($this->personnel->displayPhotoPath())->toBe('assessment-photos/front.jpg');
+});
+
+it('protects personnel pictures like other health records', function () {
+    $ownerUser = userWithRole(Role::Personnel);
+    Storage::disk('local')->put('personnel-photos/x.jpg', 'jpeg');
+    $this->personnel->forceFill(['user_id' => $ownerUser->id, 'photo_path' => 'personnel-photos/x.jpg'])->save();
+
+    $this->get(route('personnel.photo', $this->personnel))->assertOk();
+    $this->actingAs($ownerUser)->get(route('personnel.photo', $this->personnel))->assertOk();
+    $this->actingAs(userWithRole(Role::Personnel))->get(route('personnel.photo', $this->personnel))->assertForbidden();
+    $this->actingAs($ownerUser)->get(route('personnel.photo', personnelIn($this->itms)))->assertForbidden();
+});
+
+it('lets personnel managers upload and remove the picture on the personnel form', function () {
+    $this->actingAs(userWithRole(Role::HealthServiceAdmin));
+
+    Livewire::test(PersonnelForm::class, ['personnel' => $this->personnel])
+        ->set('photo', UploadedFile::fake()->image('id.jpg', 600, 800))
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $path = $this->personnel->fresh()->photo_path;
+
+    expect($path)->toStartWith('personnel-photos/'.$this->personnel->id.'/');
+    Storage::disk('local')->assertExists($path);
+
+    Livewire::test(PersonnelForm::class, ['personnel' => $this->personnel->fresh()])
+        ->set('removePhoto', true)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($this->personnel->fresh()->photo_path)->toBeNull();
+    Storage::disk('local')->assertMissing($path);
+});
+
+it('shows the WHO and PNP result at the station and does not ask about the abdomen for a normal BMI', function () {
+    fakeScaleReader(null, enabled: false);
+
+    Livewire::test(Station::class)
+        ->call('identify', $this->payload)
+        ->assertSee('Shown for WHO and PNP as soon as the weight and the height are entered')
+        ->set('weight', '67.70')
+        ->assertSee('23.7')
+        ->assertSee('WHO')
+        ->assertSee('PNP')
+        ->assertDontSee('Bulging abdomen?')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $assessment = $this->personnel->assessments()->latest('id')->first();
+
+    expect($assessment->pnp_classification)->toBe('Normal')
+        ->and($assessment->bulging_abdomen)->toBeNull();
+});
+
+it('asks about the abdomen only for an overweight or obese result and then corrects it', function () {
+    fakeScaleReader(null, enabled: false);
+
+    // 169 cm, 75 kg: BMI 26.3, overweight at 31 years old. Waist 82 cm is within the male cut-off.
+    $station = Livewire::test(Station::class)
+        ->call('identify', $this->payload)
+        ->set('weight', '75')
+        ->assertSee('26.3')
+        ->assertSee('Pre-obese')
+        ->assertSee('Overweight')
+        ->assertSee('Bulging abdomen?')
+        ->call('save')
+        ->assertHasErrors('bulging_abdomen');
+
+    expect(MonthlyWeightMonitoring::count())->toBe(0);
+
+    $station->set('bulging_abdomen', 'no')
+        ->assertSee('Corrected to: Acceptable by Waist Circumference')
+        ->set('bulging_abdomen', 'yes')
+        ->assertDontSee('Corrected to')
+        ->assertSee('No correction with a bulging abdomen')
+        ->set('bulging_abdomen', 'no')
+        ->call('save')
+        ->assertHasNoErrors()
+        ->assertSet('lastSaved.classification', 'Acceptable by Waist Circumference');
+
+    $assessment = $this->personnel->assessments()->latest('id')->first();
+
+    expect($assessment->bulging_abdomen)->toBeFalse()
+        ->and($assessment->who_classification)->toBe('Pre-obese')
+        ->and(MonthlyWeightMonitoring::sole()->pnp_classification)->toBe('Acceptable by Waist Circumference');
+});
+
+it('ignores an abdomen answer once the result is no longer overweight', function () {
+    fakeScaleReader(null, enabled: false);
+
+    Livewire::test(Station::class)
+        ->call('identify', $this->payload)
+        ->set('weight', '75')
+        ->set('bulging_abdomen', 'yes')
+        ->set('weight', '67.70')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($this->personnel->assessments()->latest('id')->first()->bulging_abdomen)->toBeNull();
 });

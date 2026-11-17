@@ -9,20 +9,36 @@ use App\Livewire\Concerns\WithLookups;
 use App\Models\Personnel;
 use App\Models\PersonnelAssignment;
 use App\Models\User;
+use App\Services\WeighIn\WeighInPhoto;
 use Carbon\CarbonImmutable;
 use Flux\Flux;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Title;
 use Livewire\Component;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
+use Livewire\WithFileUploads;
+use RuntimeException;
 
 #[Title('Personnel')]
 class Form extends Component
 {
-    use WithLookups;
+    use WithFileUploads, WithLookups;
+
+    /**
+     * Identification picture, shown at the Weigh-in Station when the personnel's QR code is scanned.
+     *
+     * @var TemporaryUploadedFile|null
+     */
+    public $photo = null;
+
+    public bool $removePhoto = false;
 
     public ?Personnel $personnel = null;
 
@@ -144,6 +160,7 @@ class Form extends Component
             'assignment_remarks' => ['nullable', 'string', 'max:500'],
             'account_email' => [$this->create_account && ! $hasAccount ? 'required' : 'nullable', 'email', 'max:255', Rule::unique('users', 'email')->ignore($this->personnel?->user_id)],
             'account_password' => [$this->create_account && ! $hasAccount ? 'required' : 'nullable', Password::defaults()],
+            'photo' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:10240'],
         ];
     }
 
@@ -185,6 +202,7 @@ class Form extends Component
             }
 
             $this->syncAccount($personnel);
+            $this->syncPhoto($personnel);
 
             return $personnel;
         });
@@ -252,6 +270,41 @@ class Form extends Component
         $user->forceFill(['role' => Role::Personnel, 'is_active' => true, 'email_verified_at' => now()])->save();
 
         $personnel->forceFill(['user_id' => $user->id])->save();
+    }
+
+    /**
+     * Store a newly uploaded picture privately (rotation fixed, resized, metadata stripped), or
+     * remove the current one. The previous file is deleted so only one picture is kept per person.
+     */
+    private function syncPhoto(Personnel $personnel): void
+    {
+        if (! $this->photo && ! $this->removePhoto) {
+            return;
+        }
+
+        $previous = $personnel->photo_path;
+        $path = null;
+
+        if ($this->photo) {
+            try {
+                $jpeg = WeighInPhoto::normalize($this->photo->getRealPath());
+            } catch (RuntimeException $exception) {
+                throw ValidationException::withMessages(['photo' => $exception->getMessage()]);
+            }
+
+            $path = 'personnel-photos/'.$personnel->id.'/'.Str::random(20).'.jpg';
+            Storage::disk('local')->put($path, $jpeg);
+        }
+
+        $personnel->forceFill(['photo_path' => $path]);
+        $personnel->auditRemarks = $path ? 'Identification photo updated' : 'Identification photo removed';
+        $personnel->save();
+
+        if ($previous) {
+            Storage::disk('local')->delete($previous);
+        }
+
+        $this->photo = null;
     }
 
     public function render(): View

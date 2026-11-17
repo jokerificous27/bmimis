@@ -5,6 +5,7 @@
     $canPrint = $user->can('printReports', $personnel);
     $tabs = [
         'overview' => __('Overview'),
+        'photos' => __('Pictures'),
         'progress' => __('BMI Progress'),
         'assessments' => __('Assessment History'),
         'monitoring' => __('Monthly Monitoring'),
@@ -25,9 +26,9 @@
     <div class="mb-6 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div class="flex items-center gap-4">
-                <div class="flex size-14 shrink-0 items-center justify-center rounded-full bg-navy-800 text-lg font-semibold text-white">
-                    {{ \Illuminate\Support\Str::substr($personnel->first_name, 0, 1) }}{{ \Illuminate\Support\Str::substr($personnel->last_name, 0, 1) }}
-                </div>
+                <button type="button" wire:click="$set('tab', 'photos')" class="shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-800" title="{{ __('Pictures') }}">
+                    <x-personnel-photo :personnel="$personnel" class="size-16 rounded-full text-lg" />
+                </button>
                 <div class="min-w-0">
                     <flux:heading size="xl" level="1" class="text-navy-900 dark:text-white">{{ $personnel->rank?->abbreviation }} {{ $personnel->formal_name }}</flux:heading>
                     <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400">
@@ -189,6 +190,10 @@
                 </flux:callout>
             </div>
         </div>
+    @endif
+
+    @if ($tab === 'photos')
+        <livewire:personnel.photos :personnel="$personnel" :key="'photos-'.$personnel->id" />
     @endif
 
     @if ($tab === 'progress')

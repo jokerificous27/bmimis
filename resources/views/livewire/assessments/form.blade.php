@@ -63,8 +63,14 @@
                     <flux:input wire:model.live.debounce.400ms="weight_kg" :label="__('Weight (kg)')" type="number" step="0.01" inputmode="decimal" placeholder="67.70" required />
                     <flux:input wire:model.live.debounce.400ms="waist_cm" :label="__('Waist (cm)')" type="number" step="0.1" inputmode="decimal" />
                     <flux:input wire:model.live.debounce.400ms="hip_cm" :label="__('Hip (cm)')" type="number" step="0.1" inputmode="decimal" />
-                    <flux:input wire:model.blur="wrist_cm" :label="__('Wrist (cm)')" type="number" step="0.1" inputmode="decimal" />
+                    <flux:input wire:model.live.debounce.400ms="wrist_cm" :label="__('Wrist (cm)')" type="number" step="0.1" inputmode="decimal" />
+                    <flux:select wire:model.live="bulging_abdomen" :label="__('Bulging abdomen?')">
+                        <flux:select.option value="">{{ __('Not observed') }}</flux:select.option>
+                        <flux:select.option value="no">{{ __('No') }}</flux:select.option>
+                        <flux:select.option value="yes">{{ __('Yes, bulging') }}</flux:select.option>
+                    </flux:select>
                 </div>
+                <flux:text size="xs" class="mt-2">{{ __('Wrist, waist and the abdomen observation decide whether a BMI above the acceptable range for the age is "Acceptable by Large Body Frame" or "Acceptable by Waist Circumference". Both need "No" for bulging abdomen.') }}</flux:text>
 
                 @if ($this->ibwIsManual)
                     <div class="mt-4 grid gap-4 sm:grid-cols-2">
@@ -120,7 +126,7 @@
                             <div class="text-xs font-medium uppercase tracking-wide text-zinc-500">{{ __('BMI Result') }}</div>
                             <div class="text-5xl font-bold tabular-nums text-navy-900 dark:text-white">{{ number_format($preview->bmi, 1) }}</div>
                             <div class="mt-2 flex justify-center gap-2">
-                                <span class="text-xs text-zinc-500">{{ __('PNP') }}:</span> <x-bmi-badge :label="$preview->pnpClassification?->label ?? __('Not configured')" :category="$preview->pnpClassification?->category" />
+                                <span class="text-xs text-zinc-500">{{ __('PNP') }}:</span> <x-bmi-badge :label="$preview->pnpLabel() ?? __('Not configured')" :category="$preview->pnpCategory()" />
                                 <span class="text-xs text-zinc-500">{{ __('WHO') }}:</span> <x-bmi-badge :label="$preview->whoClassification?->label ?? __('Not configured')" :category="$preview->whoClassification?->category" />
                             </div>
                         </div>
@@ -128,6 +134,10 @@
                             <div class="flex justify-between"><dt class="text-zinc-500">{{ __('Ideal body weight') }}</dt><dd class="font-medium">{{ $preview->idealBodyWeight->label() }}</dd></div>
                             <div class="flex justify-between"><dt class="text-zinc-500">{{ __('Weight to lose / maintain') }}</dt><dd class="font-medium">{{ $preview->weightActionText() }}</dd></div>
                             <div class="flex justify-between"><dt class="text-zinc-500">{{ __('Waist–hip ratio') }}</dt><dd class="font-medium">{{ $preview->waistHipRatio ? number_format($preview->waistHipRatio, 2) : '—' }}</dd></div>
+                            <div class="flex justify-between"><dt class="text-zinc-500">{{ __('Height–wrist ratio') }}</dt><dd class="font-medium">{{ $preview->heightWristRatio ? number_format($preview->heightWristRatio, 1).' · '.__($preview->frameSize?->label() ?? '') : '—' }}</dd></div>
+                            @if ($preview->pnpAcceptance && $preview->pnpClassification)
+                                <div class="flex justify-between"><dt class="text-zinc-500">{{ __('BMI band for the age') }}</dt><dd class="font-medium">{{ $preview->pnpClassification->label }}</dd></div>
+                            @endif
                             <div class="flex justify-between"><dt class="text-zinc-500">{{ __('Requires intervention') }}</dt><dd class="font-medium">{{ $preview->requiresIntervention() ? __('Yes') : __('No') }}</dd></div>
                         </dl>
                         <flux:text size="xs" class="mt-3">{{ __('IBW method') }}: {{ $ibwMethod->label() }}</flux:text>
@@ -175,7 +185,7 @@
                         <tr><td class="py-1.5 text-zinc-500">{{ __('Height / Weight') }}</td><td class="py-1.5 text-end font-medium">{{ $height_cm }} cm / {{ $weight_kg }} kg</td></tr>
                         <tr><td class="py-1.5 text-zinc-500">{{ __('Waist / Hip / Wrist') }}</td><td class="py-1.5 text-end font-medium">{{ $waist_cm ?: '—' }} / {{ $hip_cm ?: '—' }} / {{ $wrist_cm ?: '—' }} cm</td></tr>
                         <tr><td class="py-1.5 text-zinc-500">{{ __('BMI') }}</td><td class="py-1.5 text-end text-lg font-bold">{{ number_format($preview->bmi, 1) }}</td></tr>
-                        <tr><td class="py-1.5 text-zinc-500">{{ __('PNP / WHO') }}</td><td class="py-1.5 text-end font-medium">{{ $preview->pnpClassification?->label ?? '—' }} / {{ $preview->whoClassification?->label ?? '—' }}</td></tr>
+                        <tr><td class="py-1.5 text-zinc-500">{{ __('PNP / WHO') }}</td><td class="py-1.5 text-end font-medium">{{ $preview->pnpLabel() ?? '—' }} / {{ $preview->whoClassification?->label ?? '—' }}</td></tr>
                         <tr><td class="py-1.5 text-zinc-500">{{ __('IBW') }}</td><td class="py-1.5 text-end font-medium">{{ $preview->idealBodyWeight->label() }}</td></tr>
                         <tr><td class="py-1.5 text-zinc-500">{{ __('Weight to lose') }}</td><td class="py-1.5 text-end font-medium">{{ $preview->weightActionText() }}</td></tr>
                     </tbody>

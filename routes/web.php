@@ -3,6 +3,7 @@
 use App\Http\Controllers\AssessmentPhotoController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\MyQrController;
+use App\Http\Controllers\PersonnelPhotoController;
 use App\Http\Controllers\PrintController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\WeighInPhotoController;
@@ -45,6 +46,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('personnel', Personnel\Index::class)->name('personnel.index');
     Route::livewire('personnel/create', Personnel\Form::class)->name('personnel.create');
     Route::livewire('personnel/import', Personnel\Import::class)->middleware('permission:personnel.import')->name('personnel.import');
+    Route::get('personnel/{personnel}/photo/{view?}', PersonnelPhotoController::class)
+        ->whereIn('view', ['profile', 'left', 'center', 'right'])
+        ->name('personnel.photo');
     Route::livewire('personnel/{personnel}', Personnel\Show::class)->name('personnel.show');
     Route::livewire('personnel/{personnel}/edit', Personnel\Form::class)->name('personnel.edit');
 
@@ -80,6 +84,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::prefix('admin')->name('admin.')->group(function () {
         Route::livewire('users', Admin\Users::class)->middleware('permission:users.manage')->name('users');
+        Route::livewire('users/upload', Admin\UsersUpload::class)->middleware('permission:users.manage')->name('users.upload');
         Route::livewire('permissions', Admin\Permissions::class)->middleware('permission:users.manage')->name('permissions');
         Route::livewire('units', Admin\Units::class)->middleware('permission:units.manage')->name('units');
         Route::livewire('ranks', Admin\Ranks::class)->middleware('permission:ranks.manage')->name('ranks');

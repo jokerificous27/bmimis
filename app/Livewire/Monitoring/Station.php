@@ -2,10 +2,14 @@
 
 namespace App\Livewire\Monitoring;
 
+use App\Enums\ClassificationCategory;
 use App\Enums\Permission;
 use App\Livewire\Concerns\ValidatesMeasurements;
+use App\Models\BmiAssessment;
 use App\Models\MonthlyWeightMonitoring;
 use App\Models\Personnel;
+use App\Services\AssessmentService;
+use App\Services\Bmi\BmiEvaluation;
 use App\Services\MeasurementReviewService;
 use App\Services\MonthlyMonitoringService;
 use App\Services\WeighIn\ScaleReader;
@@ -29,7 +33,8 @@ use Livewire\WithFileUploads;
 use RuntimeException;
 
 /**
- * Weigh-in Station: identify personnel from their QR code, take one photo of the scale, confirm the weight.
+ * Weigh-in Station: identify personnel from their QR code, take one photo of the scale, confirm the weight
+ * and enter the height, waist, hip and wrist measured with it (mandatory at every weigh-in).
  * The browser decodes the QR code; the server optionally reads the weight from the photo.
  */
 #[Title('Weigh-in Station')]
@@ -76,7 +81,7 @@ class Station extends Component
     /**
      * The last weigh-in saved at this station, shown so staff can spot and correct mistakes.
      *
-     * @var array{name: string, weight: float, bmi: float|null, personnel_id: int, year: int, automatic: bool, measurements?: bool, review_record_id: int|null}|null
+     * @var array{name: string, weight: float, bmi: float|null, personnel_id: int, photo_url: string|null, year: int, automatic: bool, measurements?: bool, review_record_id: int|null}|null
      */
     #[Locked]
     public ?array $lastSaved = null;
@@ -86,10 +91,9 @@ class Station extends Component
     public string $scanMessage = '';
 
     /**
-     * Whether staff chose to measure waist, hip and wrist again with this weigh-in (null: not answered yet).
+     * Height, waist, hip and wrist are measured at every weigh-in and saved with the weight.
      */
-    #[Locked]
-    public ?bool $updateMeasurements = null;
+    public string $height_cm = '';
 
     public string $waist_cm = '';
 
@@ -98,7 +102,14 @@ class Station extends Component
     public string $wrist_cm = '';
 
     /**
-     * A clear reading that would be saved automatically, waiting for the answer to the measurement question.
+     * Staff observation, "yes" or "no": is the abdomen bulging? Asked only when the BMI result is
+     * overweight or obese, and never carried over from a previous assessment. Needed for
+     * "Acceptable by Large Body Frame" and "Acceptable by Waist Circumference".
+     */
+    public string $bulging_abdomen = '';
+
+    /**
+     * A clear reading that would be saved automatically, waiting for the measurements to be entered.
      */
     #[Locked]
     public bool $autoSaveHeld = false;
@@ -135,59 +146,108 @@ class Station extends Component
     {
         $this->authorize('encodeMonitoring', $person);
 
-        if ($this->personnelId !== $person->id) {
-            $this->reset('updateMeasurements', 'waist_cm', 'hip_cm', 'wrist_cm', 'autoSaveHeld');
-        }
+        $changed = $this->personnelId !== $person->id;
 
         $this->personnelId = $person->id;
         $this->search = '';
         $this->scanMessage = '';
-        unset($this->personnel, $this->canUpdateMeasurements);
+        unset($this->personnel, $this->thisMonthRecord, $this->assessmentToday);
+
+        if ($changed) {
+            $this->autoSaveHeld = false;
+            $this->fillMeasurements();
+        }
     }
 
     /**
-     * Staff who encode assessments are asked, before the weight is saved, whether to measure waist,
-     * hip and wrist again. Needs a height on record, which the new assessment carries over.
+     * Start from the last measurements on record, so staff only change what they measure differently.
      */
-    #[Computed]
-    public function canUpdateMeasurements(): bool
+    private function fillMeasurements(): void
     {
-        return $this->personnel !== null
-            && Auth::user()->hasPermission(Permission::EncodeAssessments)
-            && $this->personnel->latestAssessment?->height_cm !== null;
-    }
+        $last = $this->personnel?->latestAssessment;
 
-    /**
-     * "Yes, update measurements": open the fields with the last measurements filled in.
-     */
-    public function startMeasurements(): void
-    {
-        abort_unless($this->canUpdateMeasurements, 403);
-
-        $last = $this->personnel->latestAssessment;
+        $this->height_cm = $this->decimal($last?->height_cm);
         $this->waist_cm = $this->decimal($last?->waist_cm);
         $this->hip_cm = $this->decimal($last?->hip_cm);
         $this->wrist_cm = $this->decimal($last?->wrist_cm);
-        $this->updateMeasurements = true;
-        $this->resetValidation();
+        $this->bulging_abdomen = '';
+        $this->resetValidation(['height_cm', 'waist_cm', 'hip_cm', 'wrist_cm', 'bulging_abdomen']);
     }
 
     /**
-     * Back to the question without saving.
+     * An assessment already submitted for today: height, waist, hip and wrist were measured today,
+     * so the weigh-in only adds the weight.
      */
-    public function cancelMeasurements(): void
+    #[Computed]
+    public function assessmentToday(): ?BmiAssessment
     {
-        $this->reset('updateMeasurements', 'waist_cm', 'hip_cm', 'wrist_cm');
-        $this->resetValidation();
+        return $this->personnel?->assessments()->official()->whereDate('assessed_on', today())->latest('id')->first();
     }
 
     /**
-     * "No, save weight only".
+     * Live BMI result (WHO and PNP) for the weight and measurements on screen, shown before saving.
+     * Null until the weight and the height are plausible. When the measurements are not asked for
+     * (already assessed today, or a re-weigh), those of the assessment on record are used.
      */
-    public function saveWeightOnly(MonthlyMonitoringService $monitoring): void
+    #[Computed]
+    public function preview(): ?BmiEvaluation
     {
-        $this->updateMeasurements = false;
-        $this->persist($monitoring, automatic: $this->autoSaveHeld);
+        $person = $this->personnel;
+        $settings = app(Settings::class);
+
+        if (! $person || ! is_numeric($this->weight)) {
+            return null;
+        }
+
+        $onRecord = $this->measurementsRequired() ? null : ($this->assessmentToday ?? $person->latestAssessment);
+        $numeric = fn (string $value): ?float => is_numeric($value) && (float) $value > 0 ? (float) $value : null;
+
+        $weight = (float) $this->weight;
+        $height = $this->measurementsRequired() ? $numeric($this->height_cm) : $onRecord?->height_cm;
+
+        if ($height === null
+            || $weight < $settings->float('weight_min_kg') || $weight > $settings->float('weight_max_kg')
+            || $height < $settings->float('height_min_cm') || $height > $settings->float('height_max_cm')) {
+            return null;
+        }
+
+        return app(AssessmentService::class)->evaluate(
+            personnel: $person,
+            heightCm: $height,
+            weightKg: $weight,
+            date: today(),
+            waistCm: $this->measurementsRequired() ? $numeric($this->waist_cm) : $onRecord?->waist_cm,
+            hipCm: $this->measurementsRequired() ? $numeric($this->hip_cm) : $onRecord?->hip_cm,
+            wristCm: $this->measurementsRequired() ? $numeric($this->wrist_cm) : $onRecord?->wrist_cm,
+            bulgingAbdomen: $this->measurementsRequired() ? $this->bulgingAbdomen() : $onRecord?->bulging_abdomen,
+        );
+    }
+
+    /**
+     * The abdomen is only looked at when the BMI result is overweight or obese: that is the only
+     * case in which the result can be corrected (large body frame, waist circumference).
+     */
+    public function abdomenRequired(): bool
+    {
+        return $this->measurementsRequired()
+            && $this->preview?->pnpClassification?->category === ClassificationCategory::Above;
+    }
+
+    private function bulgingAbdomen(): ?bool
+    {
+        return match ($this->bulging_abdomen) {
+            'yes' => true,
+            'no' => false,
+            default => null,
+        };
+    }
+
+    /**
+     * Measurements are mandatory with every new weigh-in, unless they were already taken today.
+     */
+    public function measurementsRequired(): bool
+    {
+        return $this->personnel !== null && $this->thisMonthRecord === null && $this->assessmentToday === null;
     }
 
     /**
@@ -285,7 +345,7 @@ class Station extends Component
         if ($mode !== 'off' && app(Settings::class)->bool('station_auto_save')) {
             $this->reviewReason = $this->autoSaveBlocker();
 
-            if ($this->reviewReason === null && $this->canUpdateMeasurements && $this->updateMeasurements === null) {
+            if ($this->reviewReason === null && $this->measurementsRequired()) {
                 $this->autoSaveHeld = true;
             } elseif ($this->reviewReason === null) {
                 $this->persist(app(MonthlyMonitoringService::class), automatic: true);
@@ -339,11 +399,14 @@ class Station extends Component
     }
 
     /**
-     * Staff confirmation (the "Confirm and save" button).
+     * Staff confirmation (the "Confirm and save" button). A clear reading that only waited for the
+     * measurements still counts as read automatically, as long as staff did not change the weight.
      */
     public function save(MonthlyMonitoringService $monitoring): void
     {
-        $this->persist($monitoring, automatic: false);
+        $unchanged = is_numeric($this->weight) && abs((float) $this->weight - (float) ($this->reading['weight_kg'] ?? 0)) < 0.005;
+
+        $this->persist($monitoring, automatic: $this->autoSaveHeld && $unchanged);
     }
 
     /**
@@ -382,7 +445,10 @@ class Station extends Component
             'name' => $person->rank_name,
             'weight' => $weight,
             'bmi' => $record->bmi,
+            'classification' => $record->pnp_classification,
+            'category' => $record->pnp_category?->value,
             'personnel_id' => $person->id,
+            'photo_url' => $person->photoUrl(),
             'year' => $record->year,
             'automatic' => false,
             'review_record_id' => $record->needsMeasurementReview() ? $record->id : null,
@@ -397,8 +463,7 @@ class Station extends Component
         $person = $this->personnel ?? throw ValidationException::withMessages(['personnel' => __('Scan the personnel\'s QR code or search by name first.')]);
         $this->authorize('encodeMonitoring', $person);
 
-        $this->validate(['weight' => $this->measurementRule('weight', decimals: 2)], $this->measurementMessages());
-        $measurements = $this->updateMeasurements ? $this->validatedMeasurements() : null;
+        $measurements = $this->validatedEntry();
 
         $today = today();
         $weight = (float) $this->weight;
@@ -445,14 +510,17 @@ class Station extends Component
             'name' => $person->rank_name,
             'weight' => $weight,
             'bmi' => $record->bmi,
+            'classification' => $record->pnp_classification,
+            'category' => $record->pnp_category?->value,
             'personnel_id' => $person->id,
+            'photo_url' => $person->photoUrl(),
             'year' => $record->year,
             'automatic' => $automatic,
             'measurements' => $measurements !== null,
             'review_record_id' => $record->needsMeasurementReview() ? $record->id : null,
         ];
         Flux::toast(variant: 'success', text: $measurements !== null
-            ? __(':name — :weight kg recorded with waist, hip and wrist.', ['name' => $person->rank_name, 'weight' => number_format($weight, 2)])
+            ? __(':name — :weight kg recorded with height, waist, hip and wrist.', ['name' => $person->rank_name, 'weight' => number_format($weight, 2)])
             : __(':name — :weight kg recorded.', ['name' => $person->rank_name, 'weight' => number_format($weight, 2)]));
 
         $this->nextPersonnel();
@@ -474,33 +542,53 @@ class Station extends Component
     {
         $this->discardPendingPhoto();
         $this->reset('personnelId', 'photo', 'reading', 'deviceReading', 'weight', 'search', 'scanMessage', 'reviewReason',
-            'updateMeasurements', 'waist_cm', 'hip_cm', 'wrist_cm', 'autoSaveHeld');
+            'height_cm', 'waist_cm', 'hip_cm', 'wrist_cm', 'bulging_abdomen', 'autoSaveHeld');
         $this->resetValidation();
-        unset($this->personnel, $this->recentCaptures, $this->canUpdateMeasurements);
+        unset($this->personnel, $this->thisMonthRecord, $this->assessmentToday, $this->recentCaptures);
     }
 
     /**
-     * Waist, hip and wrist entered at the station; at least one is required.
+     * Validate the weight together with the mandatory height, waist, hip and wrist, so every missing
+     * value is reported at once. Returns null when the measurements were already taken today.
      *
-     * @return array{waist_cm: float|null, hip_cm: float|null, wrist_cm: float|null}
+     * @return array{height_cm: float, waist_cm: float, hip_cm: float, wrist_cm: float, bulging_abdomen: bool|null}|null
      */
-    private function validatedMeasurements(): array
+    private function validatedEntry(): ?array
     {
-        abort_unless($this->canUpdateMeasurements, 403);
+        $rules = ['weight' => $this->measurementRule('weight', decimals: 2)];
 
-        $validated = $this->validate([
-            'waist_cm' => $this->measurementRule('waist', required: false),
-            'hip_cm' => $this->measurementRule('hip', required: false),
-            'wrist_cm' => $this->measurementRule('wrist', required: false),
-        ], $this->measurementMessages(), ['waist_cm' => 'waist', 'hip_cm' => 'hip', 'wrist_cm' => 'wrist']);
-
-        $measurements = array_map(fn ($value) => filled($value) ? (float) $value : null, $validated);
-
-        if (array_filter($measurements) === []) {
-            throw ValidationException::withMessages(['waist_cm' => __('Enter at least one measurement, or choose "No, save weight only".')]);
+        if ($this->measurementsRequired()) {
+            $rules += [
+                'height_cm' => $this->measurementRule('height'),
+                'waist_cm' => $this->measurementRule('waist'),
+                'hip_cm' => $this->measurementRule('hip'),
+                'wrist_cm' => $this->measurementRule('wrist'),
+                'bulging_abdomen' => [$this->abdomenRequired() ? 'required' : 'nullable', 'in:yes,no'],
+            ];
         }
 
-        return $measurements;
+        $validated = $this->validate(
+            $rules,
+            [
+                'bulging_abdomen.required' => __('Answer whether the abdomen is bulging: Yes or No.'),
+                'bulging_abdomen.in' => __('Answer whether the abdomen is bulging: Yes or No.'),
+                '*.required' => __('Measure and enter the :attribute. It is required with every weigh-in.'),
+            ] + $this->measurementMessages(),
+            ['height_cm' => 'height', 'waist_cm' => 'waist', 'hip_cm' => 'hip', 'wrist_cm' => 'wrist'],
+        );
+
+        unset($validated['weight']);
+
+        if ($validated === []) {
+            return null;
+        }
+
+        // Recorded only for an overweight or obese result; otherwise the abdomen is not looked at.
+        unset($this->preview);
+        $bulging = $this->abdomenRequired() ? $validated['bulging_abdomen'] === 'yes' : null;
+        unset($validated['bulging_abdomen']);
+
+        return array_map(fn ($value) => (float) $value, $validated) + ['bulging_abdomen' => $bulging];
     }
 
     private function decimal(?float $value): string

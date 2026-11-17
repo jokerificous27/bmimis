@@ -22,7 +22,7 @@ class MeasurementReviewService
     ) {}
 
     /**
-     * @param  array{waist_cm: float|null, hip_cm: float|null, wrist_cm: float|null}  $measurements
+     * @param  array{waist_cm: float|null, hip_cm: float|null, wrist_cm: float|null, bulging_abdomen?: bool|null}  $measurements
      */
     public function update(MonthlyWeightMonitoring $record, array $measurements): BmiAssessment
     {
@@ -44,6 +44,7 @@ class MeasurementReviewService
                 'waist_cm' => $measurements['waist_cm'],
                 'hip_cm' => $measurements['hip_cm'],
                 'wrist_cm' => $measurements['wrist_cm'],
+                'bulging_abdomen' => $measurements['bulging_abdomen'] ?? null,
                 'unit_representative_name' => $baseline?->unit_representative_name,
                 'unit_representative_designation' => $baseline?->unit_representative_designation,
                 'health_service_representative_name' => $baseline?->health_service_representative_name,
@@ -59,36 +60,37 @@ class MeasurementReviewService
     }
 
     /**
-     * Waist, hip and wrist measured at the Weigh-in Station together with the monthly weight, stored
-     * as a new assessment dated on the weigh-in with the height of the latest assessment. Save it
-     * before the weight, so the weigh-in is compared with current measurements and raises no review.
+     * Height, waist, hip and wrist measured at the Weigh-in Station together with the monthly weight,
+     * stored as a new assessment dated on the weigh-in (the first one, for personnel not assessed
+     * before). Save it before the weight, so the weigh-in uses the height measured that day and is
+     * compared with current measurements, raising no review. An unfinished draft of the same day is
+     * superseded; a submitted one must not reach here (the station then records the weight only).
      *
-     * @param  array{waist_cm: float|null, hip_cm: float|null, wrist_cm: float|null}  $measurements
+     * @param  array{height_cm: float, waist_cm: float|null, hip_cm: float|null, wrist_cm: float|null, bulging_abdomen?: bool|null}  $measurements
      */
     public function recordAtWeighIn(Personnel $personnel, float $weightKg, CarbonInterface $date, array $measurements): BmiAssessment
     {
         $baseline = $personnel->latestAssessment;
-
-        if (! $baseline?->height_cm) {
-            throw ValidationException::withMessages(['waist_cm' => __('There is no height on record for this personnel. Encode a full BMI assessment instead.')]);
-        }
+        $sameDay = $this->assessments->findSameDayAssessment($personnel, $date);
 
         return $this->assessments->create(
             personnel: $personnel,
             data: [
                 'assessed_on' => $date->format('Y-m-d'),
-                'height_cm' => $baseline->height_cm,
+                'height_cm' => $measurements['height_cm'],
                 'weight_kg' => $weightKg,
                 'waist_cm' => $measurements['waist_cm'],
                 'hip_cm' => $measurements['hip_cm'],
                 'wrist_cm' => $measurements['wrist_cm'],
-                'unit_representative_name' => $baseline->unit_representative_name,
-                'unit_representative_designation' => $baseline->unit_representative_designation,
-                'health_service_representative_name' => $baseline->health_service_representative_name,
-                'health_service_representative_designation' => $baseline->health_service_representative_designation,
-                'remarks' => __('Waist, hip and wrist measured at the :month weigh-in (Weigh-in Station). Height carried over from the previous assessment.', ['month' => $date->format('F Y')]),
+                'bulging_abdomen' => $measurements['bulging_abdomen'] ?? null,
+                'unit_representative_name' => $baseline?->unit_representative_name,
+                'unit_representative_designation' => $baseline?->unit_representative_designation,
+                'health_service_representative_name' => $baseline?->health_service_representative_name,
+                'health_service_representative_designation' => $baseline?->health_service_representative_designation,
+                'remarks' => __('Height, waist, hip and wrist measured at the :month weigh-in (Weigh-in Station).', ['month' => $date->format('F Y')]),
             ],
             submit: true,
+            confirmReplace: $sameDay !== null && ! $sameDay->isOfficial(),
         );
     }
 

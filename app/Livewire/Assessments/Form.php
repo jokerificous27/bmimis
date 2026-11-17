@@ -51,6 +51,11 @@ class Form extends Component
 
     public string $wrist_cm = '';
 
+    /**
+     * Assessor's observation: "yes", "no", or empty when not observed.
+     */
+    public string $bulging_abdomen = '';
+
     public string $ibw_min_kg = '';
 
     public string $ibw_max_kg = '';
@@ -94,6 +99,11 @@ class Form extends Component
             $this->waist_cm = $this->decimal($assessment->waist_cm, 1);
             $this->hip_cm = $this->decimal($assessment->hip_cm, 1);
             $this->wrist_cm = $this->decimal($assessment->wrist_cm, 1);
+            $this->bulging_abdomen = match ($assessment->bulging_abdomen) {
+                true => 'yes',
+                false => 'no',
+                default => '',
+            };
             $this->ibw_min_kg = $this->decimal($assessment->ibw_method === IbwMethod::Manual ? $assessment->ibw_min_kg : null, 1);
             $this->ibw_max_kg = $this->decimal($assessment->ibw_method === IbwMethod::Manual ? $assessment->ibw_max_kg : null, 1);
             $this->intervention_package_id = (string) $assessment->intervention_package_id;
@@ -186,7 +196,18 @@ class Form extends Component
             waistCm: is_numeric($this->waist_cm) ? (float) $this->waist_cm : null,
             hipCm: is_numeric($this->hip_cm) ? (float) $this->hip_cm : null,
             manualIbw: ['min' => is_numeric($this->ibw_min_kg) ? (float) $this->ibw_min_kg : null, 'max' => is_numeric($this->ibw_max_kg) ? (float) $this->ibw_max_kg : null],
+            wristCm: is_numeric($this->wrist_cm) ? (float) $this->wrist_cm : null,
+            bulgingAbdomen: $this->bulgingAbdomen(),
         );
+    }
+
+    private function bulgingAbdomen(): ?bool
+    {
+        return match ($this->bulging_abdomen) {
+            'yes' => true,
+            'no' => false,
+            default => null,
+        };
     }
 
     /**
@@ -250,6 +271,7 @@ class Form extends Component
             'waist_cm' => $this->measurementRule('waist', required: false),
             'hip_cm' => $this->measurementRule('hip', required: false),
             'wrist_cm' => $this->measurementRule('wrist', required: false),
+            'bulging_abdomen' => ['nullable', 'in:yes,no'],
             'ibw_min_kg' => [$this->ibwIsManual ? 'required' : 'nullable', 'numeric', 'min:20', 'max:200'],
             'ibw_max_kg' => [$this->ibwIsManual ? 'required' : 'nullable', 'numeric', 'gte:ibw_min_kg', 'max:250'],
             'intervention_package_id' => ['nullable', Rule::exists('intervention_packages', 'id')->whereNull('deleted_at')],
@@ -317,6 +339,7 @@ class Form extends Component
             'assessed_on', 'height_cm', 'weight_kg', 'waist_cm', 'hip_cm', 'wrist_cm', 'intervention_package_id', 'ibw_min_kg', 'ibw_max_kg',
             'unit_representative_name', 'unit_representative_designation', 'health_service_representative_name', 'health_service_representative_designation', 'remarks',
         ])->map(fn ($value) => $value === '' ? null : $value)->all();
+        $data['bulging_abdomen'] = $this->bulgingAbdomen();
 
         if ($this->assessment) {
             $this->authorize('update', $this->assessment);

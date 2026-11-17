@@ -70,6 +70,8 @@
                             <tr><td class="px-4 py-2">{{ __('Waist (cm)') }}</td><td class="px-4 py-2 text-end font-semibold tabular-nums">{{ $a->waist_cm ?? '—' }}</td></tr>
                             <tr><td class="px-4 py-2">{{ __('Hip (cm)') }}</td><td class="px-4 py-2 text-end font-semibold tabular-nums">{{ $a->hip_cm ?? '—' }}</td><td class="px-4 py-2" rowspan="2"><strong>{{ __('Weight to lose') }}:</strong> {{ $a->weightActionText() }}</td></tr>
                             <tr><td class="px-4 py-2">{{ __('Wrist (cm)') }}</td><td class="px-4 py-2 text-end font-semibold tabular-nums">{{ $a->wrist_cm ?? '—' }}</td></tr>
+                            <tr><td class="px-4 py-2">{{ __('Height and wrist ratio') }}</td><td class="px-4 py-2 text-end font-semibold tabular-nums">{{ $a->height_wrist_ratio !== null ? number_format($a->height_wrist_ratio, 1) : '—' }}</td><td class="px-4 py-2">{{ $a->frame_size ? __($a->frame_size->label()) : '' }}</td></tr>
+                            <tr><td class="px-4 py-2">{{ __('Bulging abdomen') }}</td><td class="px-4 py-2 text-end font-semibold">{{ match ($a->bulging_abdomen) { true => __('Yes'), false => __('No'), default => '—' } }}</td><td class="px-4 py-2 text-xs text-zinc-500">{{ $a->bulging_abdomen === null ? __('Not observed: large body frame and waist circumference were not applied.') : '' }}</td></tr>
                             <tr class="bg-navy-50/50 dark:bg-navy-900/20">
                                 <td class="px-4 py-3 font-semibold">{{ __('BMI Result') }}</td>
                                 <td class="px-4 py-3 text-end text-2xl font-bold tabular-nums">{{ number_format($a->bmi, 1) }}</td>

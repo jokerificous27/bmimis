@@ -1,6 +1,7 @@
 <div>
     <x-page-header :title="__('User Management')" :subtitle="__('Login accounts, roles and unit assignments. Permissions per role are configured in Roles & Permissions.')">
         <x-slot:actions>
+            <flux:button size="sm" icon="document-arrow-up" :href="route('admin.users.upload')" wire:navigate>{{ __('Users upload (Excel)') }}</flux:button>
             <flux:button size="sm" variant="primary" icon="plus" wire:click="create">{{ __('Add user') }}</flux:button>
         </x-slot:actions>
     </x-page-header>

@@ -28,7 +28,7 @@ class AssessmentService
      * Assessment attributes supplied by the encoder (everything else is computed).
      */
     private const INPUT_FIELDS = [
-        'assessed_on', 'height_cm', 'weight_kg', 'waist_cm', 'hip_cm', 'wrist_cm', 'intervention_package_id',
+        'assessed_on', 'height_cm', 'weight_kg', 'waist_cm', 'hip_cm', 'wrist_cm', 'bulging_abdomen', 'intervention_package_id',
         'unit_representative_name', 'unit_representative_designation',
         'health_service_representative_name', 'health_service_representative_designation', 'remarks',
     ];
@@ -41,7 +41,7 @@ class AssessmentService
     /**
      * @param  array{min: float|null, max: float|null}|null  $manualIbw
      */
-    public function evaluate(Personnel $personnel, float $heightCm, float $weightKg, CarbonInterface $date, ?float $waistCm = null, ?float $hipCm = null, ?array $manualIbw = null): BmiEvaluation
+    public function evaluate(Personnel $personnel, float $heightCm, float $weightKg, CarbonInterface $date, ?float $waistCm = null, ?float $hipCm = null, ?array $manualIbw = null, ?float $wristCm = null, ?bool $bulgingAbdomen = null): BmiEvaluation
     {
         return $this->evaluator->evaluate(
             heightCm: $heightCm,
@@ -52,6 +52,8 @@ class AssessmentService
             waistCm: $waistCm,
             hipCm: $hipCm,
             manualIbw: $manualIbw,
+            wristCm: $wristCm,
+            bulgingAbdomen: $bulgingAbdomen,
         );
     }
 
@@ -203,6 +205,8 @@ class AssessmentService
             waistCm: $assessment->waist_cm ? (float) $assessment->waist_cm : null,
             hipCm: $assessment->hip_cm ? (float) $assessment->hip_cm : null,
             manualIbw: ['min' => isset($data['ibw_min_kg']) ? (float) $data['ibw_min_kg'] : null, 'max' => isset($data['ibw_max_kg']) ? (float) $data['ibw_max_kg'] : null],
+            wristCm: $assessment->wrist_cm ? (float) $assessment->wrist_cm : null,
+            bulgingAbdomen: $assessment->bulging_abdomen,
         );
 
         $assessment->forceFill($evaluation->toSnapshot());

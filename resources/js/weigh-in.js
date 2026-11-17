@@ -222,6 +222,16 @@ function storedRegion() {
     }
 }
 
+const CAMERA_KEY = 'weighIn.cameraId';
+
+function storedCamera() {
+    try {
+        return localStorage.getItem(CAMERA_KEY) ?? '';
+    } catch {
+        return '';
+    }
+}
+
 /**
  * Alpine component for the Weigh-in Station. The QR code and the scale display are read in the browser;
  * the photo is then uploaded through Livewire for storage (and optional server-side reading).
@@ -244,6 +254,10 @@ window.weighInStation = (options = {}) => ({
     personName: '',
     identifying: false,
     capturing: false,
+    cameras: [],
+    cameraId: storedCamera(),
+    watchingDevices: false,
+    touchDevice: window.matchMedia?.('(pointer: coarse)').matches ?? false,
     autoCapture: (() => {
         try {
             return localStorage.getItem('weighIn.autoCapture') !== 'off';
@@ -304,19 +318,59 @@ window.weighInStation = (options = {}) => ({
         );
     },
 
+    /**
+     * Open the chosen camera (a phone's rear camera by default, the web camera on a computer) at the
+     * highest resolution it offers: the display is small in a whole-body frame. A remembered camera
+     * that is no longer plugged in falls back to the default one.
+     */
+    async openStream() {
+        const size = { width: { ideal: 3840 }, height: { ideal: 2160 } };
+        const open = (video) => navigator.mediaDevices.getUserMedia({ video: { ...video, ...size }, audio: false });
+
+        if (this.cameraId) {
+            try {
+                return await open({ deviceId: { exact: this.cameraId } });
+            } catch (error) {
+                if (!['OverconstrainedError', 'NotFoundError'].includes(error?.name)) {
+                    throw error;
+                }
+
+                this.cameraId = '';
+            }
+        }
+
+        return open({ facingMode: 'environment' });
+    },
+
+    /**
+     * List the cameras of this device. Their names are only available once camera access was allowed.
+     */
+    async loadCameras() {
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            this.cameras = devices.filter((device) => device.kind === 'videoinput' && device.deviceId);
+        } catch {
+            this.cameras = [];
+        }
+
+        this.cameraId = this.stream?.getVideoTracks()[0]?.getSettings?.().deviceId ?? this.cameraId;
+    },
+
     async startScan() {
         try {
-            // Ask for the highest resolution the camera offers: the display is small in a whole-body frame.
-            this.stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment', width: { ideal: 3840 }, height: { ideal: 2160 } },
-                audio: false,
-            });
-        } catch {
-            this.message = 'The camera could not be opened. Use "Take photo" instead.';
+            this.stream = await this.openStream();
+        } catch (error) {
+            this.message =
+                error?.name === 'NotAllowedError'
+                    ? 'Camera access was blocked. Allow the camera for this site in the browser (camera icon in the address bar), then try again.'
+                    : error?.name === 'NotReadableError'
+                      ? 'The camera is in use by another program. Close it, or choose another camera.'
+                      : 'No camera could be opened. Plug in a web camera, or take or upload a photo instead.';
 
             return;
         }
 
+        await this.loadCameras();
         await this.tuneCamera();
 
         this.scanning = true;
@@ -328,6 +382,50 @@ window.weighInStation = (options = {}) => ({
         await this.$refs.video.play();
         this.updateOverlay();
         this.scanLoop();
+
+        if (!this.watchingDevices) {
+            this.watchingDevices = true;
+            navigator.mediaDevices.addEventListener?.('devicechange', () => this.loadCameras());
+        }
+    },
+
+    /**
+     * Use another camera of this computer (remembered for next time) without leaving the Smart camera.
+     */
+    async switchCamera(deviceId) {
+        if (!deviceId || deviceId === this.cameraId) {
+            return;
+        }
+
+        const previous = this.cameraId;
+        this.cameraId = deviceId;
+        this.stream?.getTracks().forEach((track) => track.stop());
+
+        try {
+            this.stream = await this.openStream();
+        } catch {
+            this.cameraId = previous;
+            this.stopScan();
+            this.message = 'That camera could not be opened. Start the Smart camera again and choose another one.';
+
+            return;
+        }
+
+        try {
+            localStorage.setItem(CAMERA_KEY, deviceId);
+        } catch {
+            // Not remembered.
+        }
+
+        // The stored display spot belongs to the other camera's view.
+        this.lock.reset();
+        this.live = this.lock.status();
+        this.displayBox = null;
+        await this.tuneCamera();
+        this.$refs.video.srcObject = this.stream;
+        await this.$refs.video.play();
+        await this.loadCameras();
+        this.updateOverlay();
     },
 
     /**
@@ -519,13 +617,18 @@ window.weighInStation = (options = {}) => ({
         };
     },
 
-    async captureFrame() {
-        if (!this.ready || this.capturing) {
+    /**
+     * Take the photo from the live camera. "withoutWeight" is for cameras that cannot see the scale
+     * display (a web camera facing the personnel): the personnel must be identified, and staff then
+     * type the weight.
+     */
+    async captureFrame(withoutWeight = false) {
+        if (this.capturing || !(withoutWeight ? this.identified : this.ready)) {
             return;
         }
 
         this.capturing = true;
-        const locked = { ...this.live };
+        const locked = this.live.state === 'locked' ? { ...this.live } : null;
         const video = this.$refs.video;
         const canvas = this.$refs.canvas;
         canvas.width = video.videoWidth;
@@ -537,8 +640,10 @@ window.weighInStation = (options = {}) => ({
         this.stopScan();
         this.capturing = false;
 
-        if (this.readOnDevice) {
+        if (this.readOnDevice && locked) {
             await this.$wire.useDeviceReading(locked.weight, 'high', locked.text, canvas.width, canvas.height, locked.count);
+        } else if (this.readOnDevice) {
+            await this.$wire.useDeviceReading(null, 'none', '', canvas.width, canvas.height, 0);
         }
 
         this.message = '';

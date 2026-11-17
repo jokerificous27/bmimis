@@ -4,7 +4,9 @@ namespace App\Models;
 
 use App\Enums\AssessmentStatus;
 use App\Enums\ClassificationCategory;
+use App\Enums\FrameSize;
 use App\Enums\IbwMethod;
+use App\Enums\PnpAcceptance;
 use App\Enums\Sex;
 use App\Enums\WeightAction;
 use App\Models\Concerns\RecordsActivity;
@@ -37,6 +39,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property float|null $wrist_cm
  * @property float $bmi
  * @property float|null $waist_hip_ratio
+ * @property bool|null $bulging_abdomen
+ * @property float|null $height_wrist_ratio
+ * @property FrameSize|null $frame_size
+ * @property PnpAcceptance|null $pnp_acceptance
  * @property IbwMethod $ibw_method
  * @property float|null $ibw_min_kg
  * @property float|null $ibw_max_kg
@@ -74,8 +80,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 #[Fillable([
     'personnel_id', 'unit_id', 'rank_id', 'assessed_on', 'age_at_assessment', 'sex',
-    'height_cm', 'weight_kg', 'waist_cm', 'hip_cm', 'wrist_cm',
-    'bmi', 'waist_hip_ratio', 'ibw_method', 'ibw_min_kg', 'ibw_max_kg', 'weight_difference_kg', 'weight_action',
+    'height_cm', 'weight_kg', 'waist_cm', 'hip_cm', 'wrist_cm', 'bulging_abdomen',
+    'bmi', 'waist_hip_ratio', 'height_wrist_ratio', 'frame_size', 'pnp_acceptance', 'ibw_method', 'ibw_min_kg', 'ibw_max_kg', 'weight_difference_kg', 'weight_action',
     'pnp_classification_id', 'pnp_classification', 'pnp_category',
     'who_classification_id', 'who_classification', 'who_category',
     'requires_intervention', 'intervention_package_id',
@@ -103,6 +109,10 @@ class BmiAssessment extends Model
             'wrist_cm' => 'float',
             'bmi' => 'float',
             'waist_hip_ratio' => 'float',
+            'bulging_abdomen' => 'boolean',
+            'height_wrist_ratio' => 'float',
+            'frame_size' => FrameSize::class,
+            'pnp_acceptance' => PnpAcceptance::class,
             'ibw_method' => IbwMethod::class,
             'ibw_min_kg' => 'float',
             'ibw_max_kg' => 'float',

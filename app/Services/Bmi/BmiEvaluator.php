@@ -2,6 +2,7 @@
 
 namespace App\Services\Bmi;
 
+use App\Enums\ClassificationCategory;
 use App\Enums\IbwMethod;
 use App\Enums\Sex;
 use App\Enums\StandardType;
@@ -46,11 +47,22 @@ class BmiEvaluator
         ?float $waistCm = null,
         ?float $hipCm = null,
         ?array $manualIbw = null,
+        ?float $wristCm = null,
+        ?bool $bulgingAbdomen = null,
     ): BmiEvaluation {
         $calculator = $this->calculator();
         $method = $this->ibwMethod();
 
         $bmi = $calculator->bmi($weightKg, $heightCm);
+        $pnp = $this->classifier->classify($bmi, StandardType::Pnp, $date, $age, $sex);
+
+        // Exemptions of the PNP Health Service for a BMI above the acceptable range for the age.
+        $rules = new PnpAcceptanceRules((array) config('pnp_bmi'));
+        $ratio = $rules->heightWristRatio($heightCm, $wristCm);
+        $frame = $rules->frameSize($sex, $ratio);
+        $acceptance = $pnp?->category === ClassificationCategory::Above
+            ? $rules->acceptance($bmi, $age, $sex, $frame, $waistCm, $bulgingAbdomen)
+            : null;
 
         $ibw = $method === IbwMethod::Manual
             ? new IdealBodyWeightRange($manualIbw['min'] ?? null, $manualIbw['max'] ?? null, IbwMethod::Manual)
@@ -64,8 +76,11 @@ class BmiEvaluator
             idealBodyWeight: $ibw,
             weightAction: $adjustment['action'],
             weightDifferenceKg: $adjustment['difference'],
-            pnpClassification: $this->classifier->classify($bmi, StandardType::Pnp, $date, $age, $sex),
+            pnpClassification: $pnp,
             whoClassification: $this->classifier->classify($bmi, StandardType::Who, $date, $age, $sex),
+            heightWristRatio: $ratio,
+            frameSize: $frame,
+            pnpAcceptance: $acceptance,
         );
     }
 }

@@ -1,5 +1,6 @@
 @php
     $person = $this->personnel;
+    $personPhotoUrl = $person?->photoUrl();
     $existing = $this->thisMonthRecord;
     $previous = $person?->monthlyWeights->first(fn ($record) => ! ($record->year === (int) today()->format('Y') && $record->month === (int) today()->format('n')));
     $confidenceColor = ['high' => 'green', 'medium' => 'amber', 'low' => 'red', 'none' => 'zinc'];
@@ -18,13 +19,16 @@
     @if ($lastSaved)
         <div class="mb-6 flex flex-col gap-3 rounded-xl border-2 border-green-500 bg-green-50 p-4 sm:flex-row sm:items-center sm:justify-between dark:bg-green-950/40" wire:key="last-saved-{{ $lastSaved['personnel_id'] }}-{{ $lastSaved['weight'] }}">
             <div class="flex items-center gap-3">
+                @if ($lastSaved['photo_url'] ?? null)
+                    <img src="{{ $lastSaved['photo_url'] }}" alt="" class="size-14 shrink-0 rounded-full object-cover">
+                @endif
                 <flux:icon.check-badge class="size-8 shrink-0 text-green-600" />
                 <div>
                     <div class="text-lg font-semibold text-green-900 dark:text-green-200">{{ $lastSaved['name'] }} — {{ number_format($lastSaved['weight'], 2) }} kg</div>
                     <div class="text-sm text-green-800 dark:text-green-300">
                         {{ $lastSaved['automatic'] ? __('Saved automatically from the photo.') : __('Saved.') }}
-                        @if ($lastSaved['measurements'] ?? false) {{ __('Waist, hip and wrist updated.') }} @endif
-                        @if ($lastSaved['bmi']) BMI {{ number_format($lastSaved['bmi'], 1) }}. @endif
+                        @if ($lastSaved['measurements'] ?? false) {{ __('Height, waist, hip and wrist updated.') }} @endif
+                        @if ($lastSaved['bmi']) BMI {{ number_format($lastSaved['bmi'], 1) }}@if ($lastSaved['classification'] ?? null) — <strong>{{ $lastSaved['classification'] }}</strong>@endif. @endif
                         {{ __('Ready for the next personnel.') }}
                     </div>
                 </div>
@@ -69,6 +73,17 @@
                                 </div>
                             </template>
                         </div>
+
+                        {{-- Picture of the personnel whose QR code was just read, on top of the live camera. --}}
+                        @if ($person)
+                            <div class="pointer-events-none absolute bottom-2 left-2 flex max-w-[70%] items-center gap-2 rounded-xl bg-black/70 p-1.5 pe-3 text-white shadow" wire:key="camera-photo-{{ $person->id }}">
+                                <x-personnel-photo :personnel="$person" :url="$personPhotoUrl" class="h-24 w-[4.5rem] rounded-lg text-lg" />
+                                <div class="min-w-0 text-sm">
+                                    <div class="truncate font-semibold">{{ $person->rank_name }}</div>
+                                    <div class="truncate text-xs text-white/80">{{ $person->unit?->code }}</div>
+                                </div>
+                            </div>
+                        @endif
                     </div>
 
                     <div class="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-600 dark:text-zinc-300">
@@ -79,6 +94,22 @@
                             {{ __('Capture automatically when ready') }}
                         </label>
                     </div>
+
+                    {{-- Computers with more than one camera (built-in and USB web cameras): choose which one to use. --}}
+                    <div class="mt-3 flex flex-wrap items-center gap-2 text-sm" x-show="cameras.length > 1" x-cloak>
+                        <label for="station-camera" class="font-medium">{{ __('Camera') }}</label>
+                        <select id="station-camera" x-on:change="switchCamera($event.target.value)" class="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-800">
+                            <template x-for="(camera, index) in cameras" :key="camera.deviceId">
+                                <option x-bind:value="camera.deviceId" x-bind:selected="camera.deviceId === cameraId" x-text="camera.label || (@js(__('Camera')) + ' ' + (index + 1))"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    {{-- A web camera often cannot see the scale display: capture the identified personnel and type the weight. --}}
+                    <button type="button" x-show="readOnDevice && identified && live.state !== 'locked'" x-on:click="captureFrame(true)" x-bind:disabled="capturing"
+                        class="mt-3 w-full rounded-xl border border-zinc-300 px-4 py-3 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
+                        {{ __('Scale not in view? Capture now and type the weight') }}
+                    </button>
                 </div>
 
                 <div class="flex flex-col gap-3 sm:flex-row">
@@ -99,12 +130,12 @@
                     <label class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border border-zinc-300 px-4 py-4 font-medium hover:bg-zinc-50 dark:border-zinc-600 dark:hover:bg-zinc-800" x-show="! scanning"
                         x-bind:class="liveCameraSupported ? '' : '!border-transparent bg-navy-800 text-white hover:!bg-navy-700'">
                         <flux:icon.camera class="size-6" />
-                        <span>{{ __('Take photo') }}</span>
+                        <span x-text="touchDevice ? @js(__('Take photo')) : @js(__('Upload a photo'))">{{ __('Take photo') }}</span>
                         <input type="file" accept="image/*" capture="environment" class="sr-only" x-on:change="handleFile($event)">
                     </label>
                 </div>
                 <template x-if="! secure">
-                    <flux:text size="xs" class="mt-2">{{ __('The Smart camera (live weight check before capture) needs a secure connection (https). Open the system through its https address, or use "Take photo".') }}</flux:text>
+                    <flux:text size="xs" class="mt-2">{{ __('The Smart camera, which also uses the web camera of a computer, needs a secure connection (https) or localhost: browsers block cameras on plain http addresses. Open the system through its https address, or take or upload a photo instead.') }}</flux:text>
                 </template>
 
                 <div class="mt-3 min-h-5 text-sm" aria-live="polite">
@@ -137,7 +168,7 @@
                 @endif
 
                 @if ($autoSave)
-                    <flux:text size="xs" class="mt-3">{{ __('Automatic mode: when the QR code and the scale reading are clear, the weight is saved as soon as the photo is taken. Unclear readings or large changes from last month wait for your check.') }}</flux:text>
+                    <flux:text size="xs" class="mt-3">{{ __('Automatic mode: when the QR code and the scale reading are clear, the weight is filled in as soon as the photo is taken and saved once the height, waist, hip and wrist are entered. Unclear readings or large changes from last month wait for your check.') }}</flux:text>
                 @elseif ($readerEnabled)
                     <flux:text size="xs" class="mt-3">{{ __('The weight is read from the photo; confirm it with one tap.') }}</flux:text>
                 @else
@@ -170,6 +201,24 @@
         <div class="space-y-6 lg:col-span-2">
             <x-panel :heading="__('2. Confirm and save')">
                 @if ($person)
+                    {{-- Picture of the identified personnel, so staff can check it is the person on the scale. --}}
+                    <div class="mb-4" wire:key="identified-photo-{{ $person->id }}">
+                        @if ($personPhotoUrl)
+                            <x-personnel-photo :personnel="$person" :url="$personPhotoUrl" class="mx-auto aspect-[3/4] w-full max-w-64 rounded-xl border-2 border-green-500" />
+                            <flux:text size="xs" class="mt-1 text-center">{{ __('Check that this is the person on the scale.') }}</flux:text>
+                        @else
+                            <div class="flex items-center gap-3 rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-600">
+                                <x-personnel-photo :personnel="$person" :url="null" class="size-14 rounded-full text-lg" />
+                                <flux:text size="sm">
+                                    {{ __('No picture on record for this personnel.') }}
+                                    @can('update', $person)
+                                        <flux:link :href="route('personnel.edit', $person)" target="_blank">{{ __('Add one') }}</flux:link>
+                                    @endcan
+                                </flux:text>
+                            </div>
+                        @endif
+                    </div>
+
                     <div class="flex items-start justify-between gap-3">
                         <div>
                             <div class="text-lg font-semibold text-navy-900 dark:text-white">{{ $person->rank?->abbreviation }} {{ $person->formal_name }}</div>
@@ -189,7 +238,7 @@
                         @can('update', $existing)
                             @php($replaceConfirm = __("Replace this month's weight of :weight kg?", ['weight' => number_format($existing->weight_kg, 2)]))
                             <form wire:submit="replaceThisMonth" class="mt-4 space-y-4">
-                                <flux:input wire:model="weight" :label="__('New weight (kg)')" type="number" step="0.01" inputmode="decimal" class="text-2xl" required
+                                <flux:input wire:model.live.debounce.400ms="weight" :label="__('New weight (kg)')" type="number" step="0.01" inputmode="decimal" class="text-2xl" required
                                     :description="$reading && $reading['weight_kg'] !== null ? __('Read from the photo — check it against the scale before replacing.') : __('Type the weight shown on the scale.')" />
                                 <flux:error name="weight_kg" />
                                 <flux:button type="submit" variant="filled" icon="arrow-path" class="w-full"
@@ -204,50 +253,43 @@
                         @endif
                         @if ($autoSaveHeld && ! $reviewReason)
                             <flux:callout variant="success" icon="check-circle" class="mt-4" :heading="__('Reading is clear')">
-                                <flux:callout.text>{{ __('Answer the question below to save.') }}</flux:callout.text>
+                                <flux:callout.text>{{ __('Enter the height, waist, hip and wrist below to save.') }}</flux:callout.text>
                             </flux:callout>
                         @endif
                         <form wire:submit="save" class="mt-4 space-y-4">
-                            <flux:input wire:model="weight" :label="__('Weight (kg)')" type="number" step="0.01" inputmode="decimal" class="text-2xl" required
+                            <flux:input wire:model.live.debounce.400ms="weight" :label="__('Weight (kg)')" type="number" step="0.01" inputmode="decimal" class="text-2xl" required
                                 :description="$reading && $reading['weight_kg'] !== null ? __('Read from the photo — check it against the scale before saving.') : __('Type the weight shown on the scale.')" />
                             <flux:error name="weight_kg" />
                             <flux:error name="personnel" />
                             <flux:error name="assessed_on" />
 
-                            @if ($this->canUpdateMeasurements)
+                            @if ($this->measurementsRequired())
                                 @php($lastAssessment = $person->latestAssessment)
                                 <div class="rounded-xl border border-navy-200 bg-navy-50/50 p-4 dark:border-navy-700 dark:bg-navy-900/40">
-                                    @if ($updateMeasurements)
-                                        <div class="font-semibold text-navy-900 dark:text-white">{{ __('Waist, hip and wrist') }}</div>
-                                        <div class="mt-3 grid grid-cols-3 gap-3">
-                                            <flux:input wire:model="waist_cm" :label="__('Waist (cm)')" type="number" step="0.1" inputmode="decimal" />
-                                            <flux:input wire:model="hip_cm" :label="__('Hip (cm)')" type="number" step="0.1" inputmode="decimal" />
-                                            <flux:input wire:model="wrist_cm" :label="__('Wrist (cm)')" type="number" step="0.1" inputmode="decimal" />
-                                        </div>
-                                        <flux:text size="xs" class="mt-2">{{ __('The last values are filled in; change the ones you measured. Saved with the weight as a new assessment dated today (height :height cm carried over), sent for certification.', ['height' => number_format($lastAssessment->height_cm, 1)]) }}</flux:text>
-                                    @else
-                                        <div class="font-semibold text-navy-900 dark:text-white">{{ __('Update the waist, hip and wrist too?') }}</div>
-                                        <flux:text size="sm" class="mt-1">
-                                            {{ __('Last measured :date: waist :waist · hip :hip · wrist :wrist', [
-                                                'date' => $lastAssessment->assessed_on->format('M j, Y'),
-                                                'waist' => $lastAssessment->waist_cm !== null ? number_format($lastAssessment->waist_cm, 1).' cm' : '—',
-                                                'hip' => $lastAssessment->hip_cm !== null ? number_format($lastAssessment->hip_cm, 1).' cm' : '—',
-                                                'wrist' => $lastAssessment->wrist_cm !== null ? number_format($lastAssessment->wrist_cm, 1).' cm' : '—',
-                                            ]) }}
-                                        </flux:text>
-                                    @endif
+                                    <div class="font-semibold text-navy-900 dark:text-white">{{ __('Height, waist, hip and wrist') }} <span class="text-red-600">*</span></div>
+                                    <div class="mt-3 grid grid-cols-2 gap-3">
+                                        <flux:input wire:model.live.debounce.400ms="height_cm" :label="__('Height (cm)')" type="number" step="0.1" inputmode="decimal" required />
+                                        <flux:input wire:model.live.debounce.400ms="waist_cm" :label="__('Waist (cm)')" type="number" step="0.1" inputmode="decimal" required />
+                                        <flux:input wire:model="hip_cm" :label="__('Hip (cm)')" type="number" step="0.1" inputmode="decimal" required />
+                                        <flux:input wire:model.live.debounce.400ms="wrist_cm" :label="__('Wrist (cm)')" type="number" step="0.1" inputmode="decimal" required />
+                                    </div>
+                                    <flux:text size="xs" class="mt-2">
+                                        @if ($lastAssessment)
+                                            {{ __('Required with every weigh-in. The values of :date are filled in; measure again and change what differs. Saved with the weight as a new assessment dated today, sent for certification.', ['date' => $lastAssessment->assessed_on->format('M j, Y')]) }}
+                                        @else
+                                            {{ __('Required with every weigh-in. Nothing is on record yet for this personnel; this becomes their first assessment, sent for certification.') }}
+                                        @endif
+                                    </flux:text>
                                 </div>
 
-                                @if ($updateMeasurements)
-                                    <flux:button type="submit" variant="primary" icon="check" class="w-full !py-6 !text-base">{{ __('Save weight and measurements') }}</flux:button>
-                                    <flux:button type="button" variant="ghost" size="sm" class="w-full" wire:click="cancelMeasurements">{{ __('Back') }}</flux:button>
-                                @else
-                                    <div class="grid gap-3">
-                                        <flux:button type="button" variant="primary" icon="pencil-square" class="w-full !py-6 !text-base" wire:click="startMeasurements">{{ __('Yes, update measurements') }}</flux:button>
-                                        <flux:button type="button" icon="check" class="w-full !py-6 !text-base" wire:click="saveWeightOnly">{{ __('No, save weight only') }}</flux:button>
-                                    </div>
-                                @endif
+                                @include('livewire.monitoring.partials.bmi-result', ['preview' => $this->preview, 'askAbdomen' => $this->abdomenRequired()])
+
+                                <flux:button type="submit" variant="primary" icon="check" class="w-full !py-6 !text-base">{{ __('Save weight and measurements') }}</flux:button>
                             @else
+                                <flux:callout icon="information-circle" :heading="__('Height, waist, hip and wrist were already measured today')">
+                                    <flux:callout.text>{{ __('An assessment dated today is on record (height :height cm), so only the weight is saved.', ['height' => number_format((float) $this->assessmentToday?->height_cm, 1)]) }}</flux:callout.text>
+                                </flux:callout>
+                                @include('livewire.monitoring.partials.bmi-result', ['preview' => $this->preview, 'askAbdomen' => false])
                                 <flux:button type="submit" variant="primary" icon="check" class="w-full !py-6 !text-base">{{ __('Confirm and save') }}</flux:button>
                             @endif
                             @unless ($pendingPhotoPath)

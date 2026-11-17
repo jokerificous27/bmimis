@@ -14,6 +14,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -48,7 +49,7 @@ class Show extends Component
 
         $this->personnel = $personnel;
         $this->year = $this->year ?: (int) today()->format('Y');
-        $this->tab = in_array($this->tab, ['overview', 'progress', 'assessments', 'monitoring', 'interventions', 'history'], true) ? $this->tab : 'overview';
+        $this->tab = in_array($this->tab, ['overview', 'photos', 'progress', 'assessments', 'monitoring', 'interventions', 'history'], true) ? $this->tab : 'overview';
     }
 
     /**
@@ -62,6 +63,12 @@ class Show extends Component
 
         Flux::toast(variant: 'success', text: __('New QR code issued. Print the new card; the old one no longer works.'));
     }
+
+    /**
+     * Re-render so the header shows the picture just uploaded in the Pictures tab.
+     */
+    #[On('personnel-photos-updated')]
+    public function refreshPhotos(): void {}
 
     #[Computed]
     public function latest(): ?BmiAssessment
