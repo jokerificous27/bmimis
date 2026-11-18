@@ -51,7 +51,9 @@ return new class extends Migration
      */
     public function up(): void
     {
-        if (! config('app.demo_data')) {
+        // Skipped when the demo data was already fully seeded (databases migrated before this file was
+        // renamed to run after the schema migrations it depends on).
+        if (! config('app.demo_data') || Personnel::query()->where('employee_number', 'DEMO-00048')->exists()) {
             return;
         }
 
